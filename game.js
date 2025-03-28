@@ -3,7 +3,9 @@ import * as THREE from 'three';
 // Game constants
 const GRID_SIZE = 20;
 const CELL_SIZE = 1;
-const MOVE_INTERVAL = 150; // milliseconds between moves
+const INITIAL_MOVE_INTERVAL = 150; // milliseconds between moves
+const SPEED_INCREASE_FACTOR = 0.65; // decrease interval by 5% per apple
+const MIN_MOVE_INTERVAL = 50; // minimum interval to prevent the game from becoming too fast
 const COLORS = {
     background: 0x222222,
     snake: 0x00ff00,
@@ -23,6 +25,7 @@ let lastMoveTime = 0;
 let gameActive = true;
 let bullets = [];
 let lastShotTime = 0;
+let currentMoveInterval = INITIAL_MOVE_INTERVAL; // track current speed
 const SHOT_COOLDOWN = 500; // milliseconds between shots
 
 // DOM elements
@@ -194,6 +197,10 @@ function moveSnake() {
         const tail = snake[snake.length - 1];
         addBodySegment(tail.position.clone());
         
+        // Increase speed (decrease interval)
+        currentMoveInterval = Math.max(MIN_MOVE_INTERVAL, currentMoveInterval * SPEED_INCREASE_FACTOR);
+        console.log(`Speed increased! Current interval: ${currentMoveInterval}ms`);
+        
         // Create new apple
         createApple();
     }
@@ -315,6 +322,7 @@ function restartGame() {
     direction = new THREE.Vector3(1, 0, 0);
     nextDirection = new THREE.Vector3(1, 0, 0);
     gameActive = true;
+    currentMoveInterval = INITIAL_MOVE_INTERVAL; // Reset speed to initial value
     
     // Clear bullets
     bullets.forEach(bullet => scene.remove(bullet.mesh));
@@ -328,8 +336,8 @@ function restartGame() {
 function animate(time) {
     requestAnimationFrame(animate);
     
-    // Move snake at fixed intervals
-    if (gameActive && time - lastMoveTime > MOVE_INTERVAL) {
+    // Move snake at intervals that get faster as the game progresses
+    if (gameActive && time - lastMoveTime > currentMoveInterval) {
         moveSnake();
         lastMoveTime = time;
     }
