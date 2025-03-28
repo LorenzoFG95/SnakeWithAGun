@@ -5,13 +5,16 @@ const GRID_SIZE = 20;
 const CELL_SIZE = 1;
 const INITIAL_MOVE_INTERVAL = 150; // milliseconds between moves
 const SPEED_INCREASE_FACTOR = 0.65; // decrease interval by 5% per apple
-const MIN_MOVE_INTERVAL = 50; // minimum interval to prevent the game from becoming too fast
+const MIN_MOVE_INTERVAL = 30; // minimum interval to prevent the game from becoming too fast
 const COLORS = {
     background: 0x222222,
     snake: 0x00ff00,
     snakeHead: 0x00cc00,
     apple: 0xff0000,
-    bullet: 0xffff00
+    bullet: 0xffff00,
+    enemy: 0x0000ff,
+    healthBar: 0xff0000,
+    healthBarBackground: 0x555555
 };
 
 // Game variables
@@ -24,9 +27,15 @@ let score = 0;
 let lastMoveTime = 0;
 let gameActive = true;
 let bullets = [];
+let enemies = [];
 let lastShotTime = 0;
+let lastEnemySpawnTime = 0;
 let currentMoveInterval = INITIAL_MOVE_INTERVAL; // track current speed
 const SHOT_COOLDOWN = 500; // milliseconds between shots
+const ENEMY_SPAWN_INTERVAL = 5000; // milliseconds between enemy spawns
+const ENEMY_SIZE = 1.5; // enemies are bigger than snake segments
+const ENEMY_HEALTH = 3; // number of hits to kill an enemy
+const ENEMY_SPEED = 0.02; // enemy movement speed
 
 // DOM elements
 const scoreElement = document.getElementById('score');
@@ -62,6 +71,9 @@ function init() {
     
     // Create first apple
     createApple();
+    
+    // Reset enemy spawn time
+    lastEnemySpawnTime = Date.now();
     
     // Add event listeners
     window.addEventListener('keydown', handleKeyDown);
@@ -174,6 +186,21 @@ function moveSnake() {
         }
     }
     
+    // Check for enemy collision
+    for (let i = 0; i < enemies.length; i++) {
+        const enemy = enemies[i];
+        const distance = Math.sqrt(
+            Math.pow(newHeadPosition.x - enemy.position.x, 2) +
+            Math.pow(newHeadPosition.z - enemy.position.z, 2)
+        );
+        
+        // If distance is less than the sum of radii, collision occurred
+        if (distance < (CELL_SIZE / 2 + ENEMY_SIZE / 2)) {
+            gameOver();
+            return;
+        }
+    }
+    
     // Move body segments (from tail to head)
     for (let i = snake.length - 1; i > 0; i--) {
         snake[i].position.copy(snake[i - 1].position);
@@ -266,6 +293,46 @@ function updateBullets() {
             // Create new apple
             createApple();
         }
+        
+        // Check if bullet hit enemy
+        else {
+            let hitEnemy = false;
+            
+            for (let j = enemies.length - 1; j >= 0; j--) {
+                const enemy = enemies[j];
+                const distance = Math.sqrt(
+                    Math.pow(bullet.position.x - enemy.position.x, 2) +
+                    Math.pow(bullet.position.z - enemy.position.z, 2)
+                );
+                
+                if (distance < ENEMY_SIZE / 2) {
+                    // Reduce enemy health
+                    enemy.health--;
+                    
+                    // Update health bar
+                    updateEnemyHealthBar(enemy);
+                    
+                    // Check if enemy is dead
+                    if (enemy.health <= 0) {
+                        // Increase score
+                        score += 10; // Points for killing enemy
+                        scoreElement.textContent = `Score: ${score}`;
+                        
+                        // Remove enemy
+                        removeEnemy(j);
+                    }
+                    
+                    // Remove bullet
+                    scene.remove(bullet.mesh);
+                    bullets.splice(i, 1);
+                    
+                    hitEnemy = true;
+                    break;
+                }
+            }
+            
+            if (hitEnemy) continue;
+        }
     }
 }
 
@@ -328,6 +395,17 @@ function restartGame() {
     bullets.forEach(bullet => scene.remove(bullet.mesh));
     bullets = [];
     
+    // Clear enemies
+    enemies.forEach(enemy => {
+        scene.remove(enemy.mesh);
+        scene.remove(enemy.healthBarBackground);
+        scene.remove(enemy.healthBar);
+    });
+    enemies = [];
+    
+    // Reset enemy spawn time
+    lastEnemySpawnTime = Date.now();
+    
     // Recreate snake and apple
     createSnake();
     createApple();
@@ -345,6 +423,140 @@ function animate(time) {
     // Update bullets
     updateBullets();
     
+    // Spawn enemies at intervals
+    const currentTime = Date.now();
+    if (gameActive && currentTime - lastEnemySpawnTime > ENEMY_SPAWN_INTERVAL) {
+        createEnemy();
+        lastEnemySpawnTime = currentTime;
+    }
+    
+    // Update enemies
+    updateEnemies();
+    
     // Render scene
     renderer.render(scene, camera);
+}
+
+function createEnemy() {
+    // Create enemy mesh (cube)
+    const enemyGeometry = new THREE.BoxGeometry(ENEMY_SIZE, ENEMY_SIZE, ENEMY_SIZE);
+    const enemyMaterial = new THREE.MeshBasicMaterial({ color: COLORS.enemy });
+    const enemyMesh = new THREE.Mesh(enemyGeometry, enemyMaterial);
+    
+    // Place enemy at random position
+    let position;
+    do {
+        position = new THREE.Vector3(
+            Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2,
+            0,
+            Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2
+        );
+    } while (isPositionOccupied(position) || isPositionTooCloseToSnake(position));
+    
+    enemyMesh.position.copy(position);
+    scene.add(enemyMesh);
+    
+    // Create health bar background
+    const healthBarBackgroundGeometry = new THREE.BoxGeometry(ENEMY_SIZE, 0.2, 0.2);
+    const healthBarBackgroundMaterial = new THREE.MeshBasicMaterial({ color: COLORS.healthBarBackground });
+    const healthBarBackground = new THREE.Mesh(healthBarBackgroundGeometry, healthBarBackgroundMaterial);
+    healthBarBackground.position.set(position.x, ENEMY_SIZE, position.z);
+    scene.add(healthBarBackground);
+    
+    // Create health bar
+    const healthBarGeometry = new THREE.BoxGeometry(ENEMY_SIZE, 0.2, 0.2);
+    const healthBarMaterial = new THREE.MeshBasicMaterial({ color: COLORS.healthBar });
+    const healthBar = new THREE.Mesh(healthBarGeometry, healthBarMaterial);
+    healthBar.position.set(position.x, ENEMY_SIZE, position.z);
+    scene.add(healthBar);
+    
+    // Add enemy to array
+    enemies.push({
+        mesh: enemyMesh,
+        position: position,
+        health: ENEMY_HEALTH,
+        maxHealth: ENEMY_HEALTH,
+        healthBarBackground: healthBarBackground,
+        healthBar: healthBar,
+        direction: new THREE.Vector3(
+            Math.random() * 2 - 1,
+            0,
+            Math.random() * 2 - 1
+        ).normalize()
+    });
+}
+
+function isPositionTooCloseToSnake(position) {
+    const minDistance = GRID_SIZE / 4; // Minimum safe distance from snake
+    
+    for (let i = 0; i < snake.length; i++) {
+        const distance = Math.sqrt(
+            Math.pow(position.x - snake[i].position.x, 2) +
+            Math.pow(position.z - snake[i].position.z, 2)
+        );
+        
+        if (distance < minDistance) {
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+function updateEnemies() {
+    for (let i = 0; i < enemies.length; i++) {
+        const enemy = enemies[i];
+        
+        // Move enemy towards snake with some randomness
+        if (Math.random() < 0.02) { // Occasionally change direction
+            enemy.direction = new THREE.Vector3(
+                Math.random() * 2 - 1,
+                0,
+                Math.random() * 2 - 1
+            ).normalize();
+        } else if (Math.random() < 0.1) { // Sometimes move towards snake
+            const head = snake[0];
+            enemy.direction = new THREE.Vector3(
+                head.position.x - enemy.position.x,
+                0,
+                head.position.z - enemy.position.z
+            ).normalize();
+        }
+        
+        // Move enemy
+        enemy.position.add(enemy.direction.clone().multiplyScalar(ENEMY_SPEED));
+        
+        // Keep enemy within bounds
+        enemy.position.x = Math.max(-GRID_SIZE / 2 + ENEMY_SIZE / 2, Math.min(GRID_SIZE / 2 - ENEMY_SIZE / 2, enemy.position.x));
+        enemy.position.z = Math.max(-GRID_SIZE / 2 + ENEMY_SIZE / 2, Math.min(GRID_SIZE / 2 - ENEMY_SIZE / 2, enemy.position.z));
+        
+        // Update enemy mesh position
+        enemy.mesh.position.copy(enemy.position);
+        
+        // Update health bar position
+        enemy.healthBarBackground.position.set(enemy.position.x, ENEMY_SIZE, enemy.position.z);
+        enemy.healthBar.position.set(enemy.position.x, ENEMY_SIZE, enemy.position.z);
+    }
+}
+
+function updateEnemyHealthBar(enemy) {
+    // Update health bar width based on current health
+    const healthPercentage = enemy.health / enemy.maxHealth;
+    enemy.healthBar.scale.x = healthPercentage;
+    
+    // Center the health bar
+    const offset = (ENEMY_SIZE * (1 - healthPercentage)) / 2;
+    enemy.healthBar.position.x = enemy.position.x - offset;
+}
+
+function removeEnemy(index) {
+    const enemy = enemies[index];
+    
+    // Remove meshes from scene
+    scene.remove(enemy.mesh);
+    scene.remove(enemy.healthBarBackground);
+    scene.remove(enemy.healthBar);
+    
+    // Remove enemy from array
+    enemies.splice(index, 1);
 }
