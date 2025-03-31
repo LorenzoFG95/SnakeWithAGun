@@ -1,11 +1,13 @@
 import * as THREE from 'three';
 
 // Game constants
-const GRID_SIZE = 20;
+let GRID_SIZE = 20;
 const CELL_SIZE = 1;
 const INITIAL_MOVE_INTERVAL = 150; // milliseconds between moves
 const SPEED_INCREASE_FACTOR = 0.85; // decrease interval by 5% per apple
 const MIN_MOVE_INTERVAL = 50; // minimum interval to prevent the game from becoming too fast
+// Constants for after tutorial completion
+const POST_TUTORIAL_GRID_SIZE = 30; // Larger grid after tutorial
 const COLORS = {
     background: 0x222222,
     snake: 0x00ff00,
@@ -52,8 +54,12 @@ let currentMoveInterval = INITIAL_MOVE_INTERVAL; // track current speed
 const SHOT_COOLDOWN = 500; // milliseconds between shots
 const ENEMY_SPAWN_INTERVAL = 5000; // milliseconds between enemy spawns
 const ENEMY_SIZE = 1.5; // enemies are bigger than snake segments
-const ENEMY_HEALTH = 3; // number of hits to kill an enemy
+let ENEMY_HEALTH = 3; // number of hits to kill an enemy (can change after tutorial)
 const ENEMY_SPEED = 0.02; // enemy movement speed
+
+// Tutorial state
+let tutorialCompleted = false;
+let firstBossDefeated = false;
 
 // Mini boss constants
 const MINI_BOSS_SIZE = ENEMY_SIZE * 3;
@@ -65,7 +71,8 @@ const scoreElement = document.getElementById('score');
 const gameOverElement = document.getElementById('gameOver');
 const finalScoreElement = document.getElementById('finalScore');
 const restartButton = document.getElementById('restartButton');
-const pauseOverlay = document.getElementById('pauseOverlay'); // New pause overlay element
+const pauseOverlay = document.getElementById('pauseOverlay'); // Pause overlay element
+const tutorialOverlay = document.getElementById('tutorialOverlay'); // Tutorial completion overlay
 
 // Initialize the game
 init();
@@ -103,6 +110,12 @@ function init() {
     // Reset game statistics
     applesEaten = 0;
     enemiesDefeated = 0;
+    
+    // Reset tutorial state
+    tutorialCompleted = false;
+    firstBossDefeated = false;
+    GRID_SIZE = 20; // Reset grid size to initial value
+    ENEMY_HEALTH = 3; // Reset enemy health to initial value
     
     // Add event listeners
     window.addEventListener('keydown', handleKeyDown);
@@ -366,6 +379,13 @@ function updateBullets() {
                         for (let i = 0; i < 3; i++) {
                             createPowerUp();
                         }
+                        
+                        // Check if this is the first mini-boss defeated
+                        if (!tutorialCompleted && !firstBossDefeated) {
+                            firstBossDefeated = true;
+                            // Pause the game and show tutorial completion message
+                            showTutorialCompletion();
+                        }
                     } else {
                         score += 10;
                     }
@@ -468,15 +488,40 @@ function restartGame() {
     score = 0;
     scoreElement.textContent = `Score: ${score}`;
     gameOverElement.style.display = 'none';
+    tutorialOverlay.style.display = 'none';
     direction = new THREE.Vector3(1, 0, 0);
     nextDirection = new THREE.Vector3(1, 0, 0);
     gameActive = true;
+    isPaused = false;
     currentMoveInterval = INITIAL_MOVE_INTERVAL; // Reset speed to initial value
     
     // Reset game statistics
     applesEaten = 0;
     enemiesDefeated = 0;
     gameStartTime = Date.now();
+    
+    // Reset tutorial state
+    tutorialCompleted = false;
+    firstBossDefeated = false;
+    
+    // Reset grid size and enemy health
+    GRID_SIZE = 20;
+    ENEMY_HEALTH = 3;
+    
+    // Remove old grid helper
+    scene.children.forEach(child => {
+        if (child instanceof THREE.GridHelper) {
+            scene.remove(child);
+        }
+    });
+    
+    // Add new grid
+    const gridHelper = new THREE.GridHelper(GRID_SIZE, GRID_SIZE);
+    scene.add(gridHelper);
+    
+    // Reset camera position
+    camera.position.set(0, 15, 15);
+    camera.lookAt(0, 0, 0);
     
     // Reset power-up effects
     powerUpEffects = {
@@ -762,4 +807,59 @@ function togglePause() {
         // Reset lastMoveTime to prevent snake from moving immediately after unpausing
         lastMoveTime = performance.now();
     }
+}
+
+function showTutorialCompletion() {
+    // Pause the game
+    isPaused = true;
+    
+    // Show tutorial completion overlay
+    tutorialOverlay.style.display = 'block';
+    
+    // Add one-time event listener for any key press to continue
+    const continueHandler = function(event) {
+        // Don't continue if the key pressed was 'p' (to prevent immediate unpausing)
+        if (event.key === 'p' || event.key === 'P') return;
+        
+        // Hide tutorial overlay
+        tutorialOverlay.style.display = 'none';
+        
+        // Apply game changes
+        applyTutorialCompletionChanges();
+        
+        // Unpause the game
+        isPaused = false;
+        lastMoveTime = performance.now();
+        
+        // Mark tutorial as completed
+        tutorialCompleted = true;
+        
+        // Remove this event listener
+        window.removeEventListener('keydown', continueHandler);
+    };
+    
+    window.addEventListener('keydown', continueHandler);
+}
+
+function applyTutorialCompletionChanges() {
+    // Increase grid size
+    GRID_SIZE = POST_TUTORIAL_GRID_SIZE;
+    
+    // Remove old grid helper
+    scene.children.forEach(child => {
+        if (child instanceof THREE.GridHelper) {
+            scene.remove(child);
+        }
+    });
+    
+    // Add new larger grid
+    const gridHelper = new THREE.GridHelper(GRID_SIZE, GRID_SIZE);
+    scene.add(gridHelper);
+    
+    // Move camera further away
+    camera.position.set(0, 20, 20);
+    camera.lookAt(0, 0, 0);
+    
+    // Increase enemy health
+    ENEMY_HEALTH = ENEMY_HEALTH * 2; // Double enemy health
 }
