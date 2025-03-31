@@ -36,6 +36,7 @@ let powerUpEffects = {
     damage: 1,
     multiShot: 1
 };
+let floatingTexts = []; // Array to store active floating text elements
 const POWER_UP_SPAWN_INTERVAL = 20000; // milliseconds between power-up spawns (increased to make them rarer)
 let lastPowerUpSpawnTime = 0;
 let direction = new THREE.Vector3(1, 0, 0);
@@ -72,11 +73,11 @@ let firstBossDefeated = false;
 
 // Mini boss constants
 const MINI_BOSS_SIZE = ENEMY_SIZE * 3;
-const MINI_BOSS_HEALTH = ENEMY_HEALTH * 10;
+const MINI_BOSS_HEALTH = ENEMY_HEALTH * 6;
 const MINI_BOSS_SPEED = ENEMY_SPEED * 0.5;
 
 // Apple eater constants
-const APPLE_EATER_CHANCE = 0.9; // 30% chance to spawn an apple-eating enemy
+const APPLE_EATER_CHANCE = 0.1; // 30% chance to spawn an apple-eating enemy
 const APPLE_EATER_SIZE = ENEMY_SIZE * 0.8; // Apple eaters are slightly smaller
 const APPLE_EATER_SPEED = ENEMY_SPEED * 1.2; // Apple eaters are slightly faster
 const APPLE_EATER_BOSS_SIZE = MINI_BOSS_SIZE * 0.8; // Transformed boss is smaller than mini boss
@@ -291,6 +292,9 @@ function moveSnake() {
         scoreElement.textContent = `Score: ${score}`;
         console.log(`Apple eaten! Speed factor: ${speedFactor.toFixed(2)}, Points earned: ${totalPoints}`);
         
+        // Show floating text
+        createFloatingText(`+${totalPoints}`, '#00ff00', apple.position);
+        
         // Update level progress
         updateLevelProgress();
         
@@ -389,6 +393,9 @@ function updateBullets() {
                 enemy.health -= bullet.damage;
                 enemy.healthBar.scale.x = enemy.health / ENEMY_HEALTH;
                 
+                // Show floating damage text
+                createFloatingText(`-${bullet.damage}`, '#ff0000', bullet.position);
+                
                 // Remove bullet
                 scene.remove(bullet.mesh);
                 bullets.splice(i, 1);
@@ -404,8 +411,11 @@ function updateBullets() {
                     
                     // Award bonus points and spawn a single power-up for mini boss
                     if (enemy.isMiniBoss) {
-                        score += 50;
-                        levelScore += 50;
+                        const points = 50;
+                        score += points;
+                        levelScore += points;
+                        // Show floating text
+                        createFloatingText(`+${points}`, '#00ff00', enemy.position);
                         // Spawn a single power-up at the boss's position
                         createPowerUp(enemy.position)
                         
@@ -428,8 +438,11 @@ function updateBullets() {
                             ENEMY_HEALTH = Math.ceil(ENEMY_HEALTH * 1.5);
                         }
                     } else {
-                        score += 10;
-                        levelScore += 10;
+                        const points = 10;
+                        score += points;
+                        levelScore += points;
+                        // Show floating text
+                        createFloatingText(`+${points}`, '#00ff00', enemy.position);
                         
                         // Update level progress
                         updateLevelProgress();
@@ -573,6 +586,10 @@ function restartGame() {
     camera.position.set(0, 15, 15);
     camera.lookAt(0, 0, 0);
     
+    // Clear floating texts
+    floatingTexts.forEach(text => scene.remove(text.mesh));
+    floatingTexts = [];
+    
     // Reset power-up effects
     powerUpEffects = {
         fireRate: 1,
@@ -644,6 +661,9 @@ function animate(time) {
     
     // Check for power-up collisions
     checkPowerUpCollisions();
+    
+    // Update floating texts
+    updateFloatingTexts();
     
     // Render scene
     renderer.render(scene, camera);
@@ -895,6 +915,48 @@ function createPowerUp(customPosition = null) {
     });
 }
 
+function createFloatingText(text, color, position) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 128;
+    const context = canvas.getContext('2d');
+    context.font = 'Bold 60px Arial';
+    context.fillStyle = color;
+    context.textAlign = 'center';
+    context.fillText(text, canvas.width / 2, canvas.height / 2);
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+    const sprite = new THREE.Sprite(material);
+    sprite.position.copy(position);
+    sprite.position.y += 1; // Position above the event
+    sprite.scale.set(2, 1, 2);
+    scene.add(sprite);
+    
+    floatingTexts.push({
+        mesh: sprite,
+        createdAt: Date.now(),
+        velocity: new THREE.Vector3(0, 0.02, 0)
+    });
+}
+
+function updateFloatingTexts() {
+    const now = Date.now();
+    for (let i = floatingTexts.length - 1; i >= 0; i--) {
+        const text = floatingTexts[i];
+        const age = now - text.createdAt;
+        
+        if (age > 1000) { // Remove after 1 second
+            scene.remove(text.mesh);
+            floatingTexts.splice(i, 1);
+        } else {
+            // Move text upward and fade out
+            text.mesh.position.add(text.velocity);
+            text.mesh.material.opacity = 1 - (age / 1000);
+        }
+    }
+}
+
 function checkPowerUpCollisions() {
     const head = snake[0];
     
@@ -920,9 +982,13 @@ function checkPowerUpCollisions() {
             powerUps.splice(i, 1);
             
             // Play sound or show effect
-            score += 5; // Bonus points for collecting power-ups
-            levelScore += 5; // Add to level score
+            const points = 5;
+            score += points; // Bonus points for collecting power-ups
+            levelScore += points; // Add to level score
             scoreElement.textContent = `Score: ${score}`;
+            
+            // Show floating text
+            createFloatingText(`+${points}`, '#00ff00', head.position);
             
             // Update level progress
             updateLevelProgress();
