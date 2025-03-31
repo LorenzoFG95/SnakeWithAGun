@@ -4,8 +4,8 @@ import * as THREE from 'three';
 const GRID_SIZE = 20;
 const CELL_SIZE = 1;
 const INITIAL_MOVE_INTERVAL = 150; // milliseconds between moves
-const SPEED_INCREASE_FACTOR = 0.65; // decrease interval by 5% per apple
-const MIN_MOVE_INTERVAL = 30; // minimum interval to prevent the game from becoming too fast
+const SPEED_INCREASE_FACTOR = 0.85; // decrease interval by 5% per apple
+const MIN_MOVE_INTERVAL = 50; // minimum interval to prevent the game from becoming too fast
 const COLORS = {
     background: 0x222222,
     snake: 0x00ff00,
@@ -14,12 +14,23 @@ const COLORS = {
     bullet: 0xffff00,
     enemy: 0x0000ff,
     healthBar: 0xff0000,
-    healthBarBackground: 0x555555
+    healthBarBackground: 0x555555,
+    powerUpFireRate: 0xff9900,
+    powerUpDamage: 0xff0000,
+    powerUpMultiShot: 0x00ffff
 };
 
 // Game variables
 let scene, camera, renderer;
 let snake = [];
+let powerUps = [];
+let powerUpEffects = {
+    fireRate: 1,
+    damage: 1,
+    multiShot: 1
+};
+const POWER_UP_SPAWN_INTERVAL = 10000; // milliseconds between power-up spawns
+let lastPowerUpSpawnTime = 0;
 let direction = new THREE.Vector3(1, 0, 0);
 let nextDirection = new THREE.Vector3(1, 0, 0);
 let apple;
@@ -237,24 +248,51 @@ function shootBullet() {
     if (!gameActive) return;
     
     const currentTime = Date.now();
-    if (currentTime - lastShotTime < SHOT_COOLDOWN) return;
+    if (currentTime - lastShotTime < SHOT_COOLDOWN / powerUpEffects.fireRate) return;
     
     lastShotTime = currentTime;
     
     const head = snake[0];
-    const bulletGeometry = new THREE.SphereGeometry(CELL_SIZE / 4, 8, 8);
-    const bulletMaterial = new THREE.MeshBasicMaterial({ color: COLORS.bullet });
-    const bulletMesh = new THREE.Mesh(bulletGeometry, bulletMaterial);
     
-    // Position bullet at snake head
-    bulletMesh.position.copy(head.position.clone());
-    scene.add(bulletMesh);
+    // Create bullets based on multiShot power-up
+    const bulletCount = powerUpEffects.multiShot;
+    const directions = [];
     
-    bullets.push({
-        mesh: bulletMesh,
-        position: head.position.clone(),
-        direction: direction.clone(),
-        speed: 0.2
+    if (bulletCount === 1) {
+        directions.push(direction.clone());
+    } else {
+        // Spread bullets in a fan pattern
+        const maxSpreadAngle = Math.PI / 3; // 60 degrees total spread
+        const angleStep = maxSpreadAngle / (bulletCount - 1);
+        const startAngle = -maxSpreadAngle / 2;
+        
+        for (let i = 0; i < bulletCount; i++) {
+            const angle = startAngle + i * angleStep;
+            const dir = direction.clone().applyAxisAngle(
+                new THREE.Vector3(0, 1, 0),
+                angle
+            );
+            directions.push(dir);
+        }
+    }
+    
+    directions.forEach(dir => {
+        // Create bullet (sphere)
+        const bulletGeometry = new THREE.SphereGeometry(CELL_SIZE / 4, 8, 8);
+        const bulletMaterial = new THREE.MeshBasicMaterial({ color: COLORS.bullet });
+        const bulletMesh = new THREE.Mesh(bulletGeometry, bulletMaterial);
+        
+        // Position bullet at snake head
+        bulletMesh.position.copy(head.position);
+        scene.add(bulletMesh);
+        
+        bullets.push({
+            mesh: bulletMesh,
+            position: head.position.clone(),
+            direction: dir,
+            speed: 0.2,
+            damage: powerUpEffects.damage
+        });
     });
 }
 
@@ -268,70 +306,41 @@ function updateBullets() {
         
         // Check if bullet is out of bounds
         if (
-            bullet.position.x < -GRID_SIZE || 
-            bullet.position.x > GRID_SIZE || 
-            bullet.position.z < -GRID_SIZE || 
-            bullet.position.z > GRID_SIZE
+            bullet.position.x < -GRID_SIZE / 2 || 
+            bullet.position.x >= GRID_SIZE / 2 || 
+            bullet.position.z < -GRID_SIZE / 2 || 
+            bullet.position.z >= GRID_SIZE / 2
         ) {
             scene.remove(bullet.mesh);
             bullets.splice(i, 1);
+            continue;
         }
         
-        // Check if bullet hit apple
-        else if (
-            Math.abs(bullet.position.x - apple.position.x) < CELL_SIZE / 2 && 
-            Math.abs(bullet.position.z - apple.position.z) < CELL_SIZE / 2
-        ) {
-            // Increase score
-            score += 5; // Bonus points for shooting apple
-            scoreElement.textContent = `Score: ${score}`;
+        // Check for enemy collisions
+        for (let j = enemies.length - 1; j >= 0; j--) {
+            const enemy = enemies[j];
             
-            // Remove bullet
-            scene.remove(bullet.mesh);
-            bullets.splice(i, 1);
-            
-            // Create new apple
-            createApple();
-        }
-        
-        // Check if bullet hit enemy
-        else {
-            let hitEnemy = false;
-            
-            for (let j = enemies.length - 1; j >= 0; j--) {
-                const enemy = enemies[j];
-                const distance = Math.sqrt(
-                    Math.pow(bullet.position.x - enemy.position.x, 2) +
-                    Math.pow(bullet.position.z - enemy.position.z, 2)
-                );
+            if (bullet.position.distanceTo(enemy.position) < ENEMY_SIZE / 2) {
+                // Hit enemy
+                enemy.health -= bullet.damage;
+                enemy.healthBar.scale.x = enemy.health / ENEMY_HEALTH;
                 
-                if (distance < ENEMY_SIZE / 2) {
-                    // Reduce enemy health
-                    enemy.health--;
-                    
-                    // Update health bar
-                    updateEnemyHealthBar(enemy);
-                    
-                    // Check if enemy is dead
-                    if (enemy.health <= 0) {
-                        // Increase score
-                        score += 10; // Points for killing enemy
-                        scoreElement.textContent = `Score: ${score}`;
-                        
-                        // Remove enemy
-                        removeEnemy(j);
-                    }
-                    
-                    // Remove bullet
-                    scene.remove(bullet.mesh);
-                    bullets.splice(i, 1);
-                    
-                    hitEnemy = true;
-                    break;
+                // Remove bullet
+                scene.remove(bullet.mesh);
+                bullets.splice(i, 1);
+                
+                // Check if enemy is dead
+                if (enemy.health <= 0) {
+                    scene.remove(enemy.mesh);
+                    scene.remove(enemy.healthBarBackground);
+                    scene.remove(enemy.healthBar);
+                    enemies.splice(j, 1);
+                    score += 10;
+                    scoreElement.textContent = `Score: ${score}`;
                 }
+                
+                break;
             }
-            
-            if (hitEnemy) continue;
         }
     }
 }
@@ -391,6 +400,13 @@ function restartGame() {
     gameActive = true;
     currentMoveInterval = INITIAL_MOVE_INTERVAL; // Reset speed to initial value
     
+    // Reset power-up effects
+    powerUpEffects = {
+        fireRate: 1,
+        damage: 1,
+        multiShot: 1
+    };
+    
     // Clear bullets
     bullets.forEach(bullet => scene.remove(bullet.mesh));
     bullets = [];
@@ -402,6 +418,10 @@ function restartGame() {
         scene.remove(enemy.healthBar);
     });
     enemies = [];
+    
+    // Clear power-ups
+    powerUps.forEach(powerUp => scene.remove(powerUp.mesh));
+    powerUps = [];
     
     // Reset enemy spawn time
     lastEnemySpawnTime = Date.now();
@@ -430,8 +450,17 @@ function animate(time) {
         lastEnemySpawnTime = currentTime;
     }
     
+    // Spawn power-ups at intervals
+    if (gameActive && currentTime - lastPowerUpSpawnTime > POWER_UP_SPAWN_INTERVAL) {
+        createPowerUp();
+        lastPowerUpSpawnTime = currentTime;
+    }
+    
     // Update enemies
     updateEnemies();
+    
+    // Check for power-up collisions
+    checkPowerUpCollisions();
     
     // Render scene
     renderer.render(scene, camera);
@@ -504,38 +533,101 @@ function isPositionTooCloseToSnake(position) {
 }
 
 function updateEnemies() {
-    for (let i = 0; i < enemies.length; i++) {
-        const enemy = enemies[i];
+    enemies.forEach(enemy => {
+        // Move enemy towards snake head
+        const direction = new THREE.Vector3().subVectors(
+            snake[0].position,
+            enemy.position
+        ).normalize();
         
-        // Move enemy towards snake with some randomness
-        if (Math.random() < 0.02) { // Occasionally change direction
-            enemy.direction = new THREE.Vector3(
-                Math.random() * 2 - 1,
-                0,
-                Math.random() * 2 - 1
-            ).normalize();
-        } else if (Math.random() < 0.1) { // Sometimes move towards snake
-            const head = snake[0];
-            enemy.direction = new THREE.Vector3(
-                head.position.x - enemy.position.x,
-                0,
-                head.position.z - enemy.position.z
-            ).normalize();
-        }
-        
-        // Move enemy
-        enemy.position.add(enemy.direction.clone().multiplyScalar(ENEMY_SPEED));
-        
-        // Keep enemy within bounds
-        enemy.position.x = Math.max(-GRID_SIZE / 2 + ENEMY_SIZE / 2, Math.min(GRID_SIZE / 2 - ENEMY_SIZE / 2, enemy.position.x));
-        enemy.position.z = Math.max(-GRID_SIZE / 2 + ENEMY_SIZE / 2, Math.min(GRID_SIZE / 2 - ENEMY_SIZE / 2, enemy.position.z));
-        
-        // Update enemy mesh position
+        enemy.position.add(direction.multiplyScalar(ENEMY_SPEED));
         enemy.mesh.position.copy(enemy.position);
         
         // Update health bar position
-        enemy.healthBarBackground.position.set(enemy.position.x, ENEMY_SIZE, enemy.position.z);
-        enemy.healthBar.position.set(enemy.position.x, ENEMY_SIZE, enemy.position.z);
+        enemy.healthBarBackground.position.set(
+            enemy.position.x,
+            enemy.position.y + ENEMY_SIZE,
+            enemy.position.z
+        );
+        enemy.healthBar.position.set(
+            enemy.position.x,
+            enemy.position.y + ENEMY_SIZE,
+            enemy.position.z
+        );
+    });
+}
+
+function createPowerUp() {
+    const types = ['fireRate', 'damage', 'multiShot'];
+    const type = types[Math.floor(Math.random() * types.length)];
+    
+    let color, shape;
+    switch (type) {
+        case 'fireRate':
+            color = COLORS.powerUpFireRate;
+            shape = new THREE.ConeGeometry(CELL_SIZE/2, CELL_SIZE, 16);
+            break;
+        case 'damage':
+            color = COLORS.powerUpDamage;
+            shape = new THREE.TetrahedronGeometry(CELL_SIZE/2);
+            break;
+        case 'multiShot':
+            color = COLORS.powerUpMultiShot;
+            shape = new THREE.TorusGeometry(CELL_SIZE/3, CELL_SIZE/6, 16, 16);
+            break;
+    }
+    
+    const material = new THREE.MeshBasicMaterial({ color: color });
+    const mesh = new THREE.Mesh(shape, material);
+    
+    // Place power-up at random position
+    let position;
+    do {
+        position = new THREE.Vector3(
+            Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2,
+            0,
+            Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2
+        );
+    } while (isPositionOccupied(position));
+    
+    mesh.position.copy(position);
+    scene.add(mesh);
+    
+    powerUps.push({
+        mesh: mesh,
+        position: position,
+        type: type
+    });
+}
+
+function checkPowerUpCollisions() {
+    const head = snake[0];
+    
+    for (let i = powerUps.length - 1; i >= 0; i--) {
+        const powerUp = powerUps[i];
+        
+        if (head.position.distanceTo(powerUp.position) < CELL_SIZE) {
+            // Apply power-up effect
+            switch (powerUp.type) {
+                case 'fireRate':
+                    powerUpEffects.fireRate += 2; // Double fire rate
+                    break;
+                case 'damage':
+                    powerUpEffects.damage += 2; // Double damage
+                    break;
+                case 'multiShot':
+                    powerUpEffects.multiShot += 3; // Triple shot
+                    break;
+            }
+            
+            // Remove power-up from scene and array
+            scene.remove(powerUp.mesh);
+            powerUps.splice(i, 1);
+            
+            // Play sound or show effect
+            score += 5; // Bonus points for collecting power-ups
+            scoreElement.textContent = `Score: ${score}`;
+        }
     }
 }
 
