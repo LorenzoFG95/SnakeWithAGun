@@ -18,6 +18,8 @@ const COLORS = {
     bullet: 0xffff00,
     enemy: 0x0000ff,
     miniBoss: 0x800080, // Purple color for mini boss
+    appleEater: 0xff8800, // Orange color for apple-eating enemy
+    appleEaterBoss: 0xff00ff, // Magenta color for transformed apple-eater boss
     healthBar: 0xff0000,
     healthBarBackground: 0x555555,
     powerUpFireRate: 0xff9900,
@@ -72,6 +74,14 @@ let firstBossDefeated = false;
 const MINI_BOSS_SIZE = ENEMY_SIZE * 3;
 const MINI_BOSS_HEALTH = ENEMY_HEALTH * 10;
 const MINI_BOSS_SPEED = ENEMY_SPEED * 0.5;
+
+// Apple eater constants
+const APPLE_EATER_CHANCE = 0.9; // 30% chance to spawn an apple-eating enemy
+const APPLE_EATER_SIZE = ENEMY_SIZE * 0.8; // Apple eaters are slightly smaller
+const APPLE_EATER_SPEED = ENEMY_SPEED * 1.2; // Apple eaters are slightly faster
+const APPLE_EATER_BOSS_SIZE = MINI_BOSS_SIZE * 0.8; // Transformed boss is smaller than mini boss
+const APPLE_EATER_BOSS_HEALTH = MINI_BOSS_HEALTH * 0.7; // Transformed boss has less health than mini boss
+
 
 // DOM elements
 const scoreElement = document.getElementById('score');
@@ -268,11 +278,18 @@ function moveSnake() {
         head.position.x === apple.position.x && 
         head.position.z === apple.position.z
     ) {
+        // Calculate points based on speed - faster speed (lower interval) means more points
+        const speedFactor = INITIAL_MOVE_INTERVAL / currentMoveInterval;
+        const basePoints = 10;
+        const speedBonus = Math.floor(basePoints * (speedFactor - 1));
+        const totalPoints = basePoints + speedBonus;
+        
         // Increase score and apples eaten counter
-        score += 10; // Increased from 1 to 3 points per apple
-        levelScore += 10; // Add to level score
+        score += totalPoints;
+        levelScore += totalPoints;
         applesEaten++;
         scoreElement.textContent = `Score: ${score}`;
+        console.log(`Apple eaten! Speed factor: ${speedFactor.toFixed(2)}, Points earned: ${totalPoints}`);
         
         // Update level progress
         updateLevelProgress();
@@ -581,6 +598,7 @@ function restartGame() {
     
     // Reset enemy spawn time
     lastEnemySpawnTime = Date.now();
+    lastPowerUpSpawnTime = Date.now();
     
     // Recreate snake and apple
     createSnake();
@@ -636,13 +654,23 @@ function createEnemy() {
     // Mini bosses are spawned through createMiniBoss function
     const isMiniBoss = false;
     
-    // Set enemy properties based on current level
-    const size = ENEMY_SIZE;
-    const health = ENEMY_HEALTH * (currentLevel + 1); // Increase health with level
-    const color = COLORS.enemy;
+    // Determine if this will be an apple-eating enemy
+    const isAppleEater = Math.random() < APPLE_EATER_CHANCE;
     
-    // Create enemy mesh (cube)
-    const enemyGeometry = new THREE.BoxGeometry(size, size, size);
+    // Set enemy properties based on current level and type
+    const size = isAppleEater ? APPLE_EATER_SIZE : ENEMY_SIZE;
+    const health = ENEMY_HEALTH * (currentLevel + 1); // Increase health with level
+    const color = isAppleEater ? COLORS.appleEater : COLORS.enemy;
+    
+    // Create enemy mesh (cube for regular enemies, sphere for apple eaters)
+    let enemyGeometry;
+    if (isAppleEater) {
+        // Use sphere geometry for apple eaters to distinguish them
+        enemyGeometry = new THREE.SphereGeometry(size, 16, 16);
+    } else {
+        enemyGeometry = new THREE.BoxGeometry(size, size, size);
+    }
+    
     const enemyMaterial = new THREE.MeshBasicMaterial({ color: color });
     const enemyMesh = new THREE.Mesh(enemyGeometry, enemyMaterial);
     
@@ -660,17 +688,17 @@ function createEnemy() {
     scene.add(enemyMesh);
     
     // Create health bar background
-    const healthBarBackgroundGeometry = new THREE.BoxGeometry(ENEMY_SIZE, 0.2, 0.2);
+    const healthBarBackgroundGeometry = new THREE.BoxGeometry(size, 0.2, 0.2);
     const healthBarBackgroundMaterial = new THREE.MeshBasicMaterial({ color: COLORS.healthBarBackground });
     const healthBarBackground = new THREE.Mesh(healthBarBackgroundGeometry, healthBarBackgroundMaterial);
-    healthBarBackground.position.set(position.x, ENEMY_SIZE, position.z);
+    healthBarBackground.position.set(position.x, size, position.z);
     scene.add(healthBarBackground);
     
     // Create health bar
-    const healthBarGeometry = new THREE.BoxGeometry(ENEMY_SIZE, 0.2, 0.2);
+    const healthBarGeometry = new THREE.BoxGeometry(size, 0.2, 0.2);
     const healthBarMaterial = new THREE.MeshBasicMaterial({ color: COLORS.healthBar });
     const healthBar = new THREE.Mesh(healthBarGeometry, healthBarMaterial);
-    healthBar.position.set(position.x, ENEMY_SIZE, position.z);
+    healthBar.position.set(position.x, size, position.z);
     scene.add(healthBar);
     
     // Add enemy to array
@@ -682,13 +710,15 @@ function createEnemy() {
         healthBarBackground: healthBarBackground,
         healthBar: healthBar,
         isMiniBoss: isMiniBoss,
+        isAppleEater: isAppleEater,
+        hasEatenApple: false, // Track if this apple eater has eaten an apple
         direction: new THREE.Vector3(
             Math.random() * 2 - 1,
             0,
             Math.random() * 2 - 1
         ).normalize()
-    });
-}
+    });}
+
 
 function isPositionTooCloseToSnake(position) {
     const minDistance = GRID_SIZE / 4; // Minimum safe distance from snake
@@ -709,29 +739,114 @@ function isPositionTooCloseToSnake(position) {
 
 function updateEnemies() {
     enemies.forEach(enemy => {
-        // Move enemy towards snake head
+        let targetPosition;
+        
+        // Determine target based on enemy type
+        if (enemy.isAppleEater && !enemy.hasEatenApple) {
+            // Apple eaters target the apple
+            targetPosition = apple.position;
+        } else {
+            // Regular enemies and transformed apple eaters target the snake head
+            targetPosition = snake[0].position;
+        }
+        
+        // Move enemy towards target
         const direction = new THREE.Vector3().subVectors(
-            snake[0].position,
+            targetPosition,
             enemy.position
         ).normalize();
         
-        const speed = enemy.isMiniBoss ? MINI_BOSS_SPEED : ENEMY_SPEED;
+        // Determine speed based on enemy type
+        let speed;
+        if (enemy.isMiniBoss) {
+            speed = MINI_BOSS_SPEED;
+        } else if (enemy.isAppleEater && !enemy.hasEatenApple) {
+            speed = APPLE_EATER_SPEED;
+        } else {
+            speed = ENEMY_SPEED;
+        }
+        
         enemy.position.add(direction.multiplyScalar(speed));
         enemy.mesh.position.copy(enemy.position);
         
-        // Update health bar position
+        // Check if apple eater has reached the apple
+        if (enemy.isAppleEater && !enemy.hasEatenApple) {
+            const distanceToApple = enemy.position.distanceTo(apple.position);
+            if (distanceToApple < CELL_SIZE / 2 + APPLE_EATER_SIZE / 2) {
+                // Apple eater has reached the apple
+                transformAppleEater(enemy);
+                // Create a new apple
+                createApple();
+            }
+        }
+        
+        // Update health bar position - adjust height based on enemy size
+        const barHeight = enemy.isMiniBoss ? MINI_BOSS_SIZE : 
+                         (enemy.isAppleEater && enemy.hasEatenApple) ? APPLE_EATER_BOSS_SIZE : 
+                         enemy.isAppleEater ? APPLE_EATER_SIZE : ENEMY_SIZE;
+        
         enemy.healthBarBackground.position.set(
             enemy.position.x,
-            enemy.position.y + ENEMY_SIZE,
+            enemy.position.y + barHeight,
             enemy.position.z
         );
         enemy.healthBar.position.set(
             enemy.position.x,
-            enemy.position.y + ENEMY_SIZE,
+            enemy.position.y + barHeight,
             enemy.position.z
         );
     });
 }
+
+function transformAppleEater(enemy) {
+    // Mark as having eaten an apple
+    enemy.hasEatenApple = true;
+    
+    // Remove old mesh
+    scene.remove(enemy.mesh);
+    
+    // Create new larger mesh with boss appearance
+    const bossGeometry = new THREE.SphereGeometry(APPLE_EATER_BOSS_SIZE, 16, 16);
+    const bossMaterial = new THREE.MeshBasicMaterial({ color: COLORS.appleEaterBoss });
+    const bossMesh = new THREE.Mesh(bossGeometry, bossMaterial);
+    bossMesh.position.copy(enemy.position);
+    scene.add(bossMesh);
+    
+    // Update enemy properties
+    enemy.mesh = bossMesh;
+    enemy.health = APPLE_EATER_BOSS_HEALTH * (currentLevel + 1);
+    enemy.maxHealth = enemy.health;
+    
+    // Update health bar size
+    scene.remove(enemy.healthBarBackground);
+    scene.remove(enemy.healthBar);
+    
+    // Create new health bars
+    const healthBarBackgroundGeometry = new THREE.BoxGeometry(APPLE_EATER_BOSS_SIZE, 0.2, 0.2);
+    const healthBarBackgroundMaterial = new THREE.MeshBasicMaterial({ color: COLORS.healthBarBackground });
+    const healthBarBackground = new THREE.Mesh(healthBarBackgroundGeometry, healthBarBackgroundMaterial);
+    healthBarBackground.position.set(enemy.position.x, enemy.position.y + APPLE_EATER_BOSS_SIZE, enemy.position.z);
+    scene.add(healthBarBackground);
+    
+    const healthBarGeometry = new THREE.BoxGeometry(APPLE_EATER_BOSS_SIZE, 0.2, 0.2);
+    const healthBarMaterial = new THREE.MeshBasicMaterial({ color: COLORS.healthBar });
+    const healthBar = new THREE.Mesh(healthBarGeometry, healthBarMaterial);
+    healthBar.position.set(enemy.position.x, enemy.position.y + APPLE_EATER_BOSS_SIZE, enemy.position.z);
+    scene.add(healthBar);
+    
+    enemy.healthBarBackground = healthBarBackground;
+    enemy.healthBar = healthBar;
+    
+    // Add visual effect or sound to indicate transformation
+    // Award points for the transformation
+    score += 15;
+    levelScore += 15;
+    scoreElement.textContent = `Score: ${score}`;
+    
+    // Update level progress
+    updateLevelProgress();
+}
+
 
 function createPowerUp(customPosition = null) {
     const types = ['fireRate', 'damage', 'multiShot'];
