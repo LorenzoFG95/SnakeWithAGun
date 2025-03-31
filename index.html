@@ -16,6 +16,32 @@
             font-size: 20px;
             z-index: 100;
         }
+        #levelInfo {
+            position: absolute;
+            top: 40px;
+            left: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+            z-index: 100;
+        }
+        #progressBarContainer {
+            position: absolute;
+            top: 70px;
+            left: 10px;
+            width: 200px;
+            height: 15px;
+            background-color: rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            overflow: hidden;
+            z-index: 100;
+        }
+        #progressBar {
+            height: 100%;
+            width: 0%;
+            background-color: #00ff00;
+            transition: width 0.3s ease-in-out;
+        }
         #gameOver {
             position: absolute;
             top: 50%;
@@ -68,6 +94,10 @@
 </head>
 <body>
     <div id="score">Score: 0</div>
+    <div id="levelInfo">Level: Tutorial</div>
+    <div id="progressBarContainer">
+        <div id="progressBar"></div>
+    </div>
     <div id="gameOver">
         <h2>Game Over!</h2>
         <p>Your score: <span id="finalScore">0</span></p>

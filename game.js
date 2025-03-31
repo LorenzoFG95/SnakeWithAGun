@@ -8,6 +8,8 @@ const SPEED_INCREASE_FACTOR = 0.85; // decrease interval by 5% per apple
 const MIN_MOVE_INTERVAL = 50; // minimum interval to prevent the game from becoming too fast
 // Constants for after tutorial completion
 const POST_TUTORIAL_GRID_SIZE = 30; // Larger grid after tutorial
+ // Level system constants
+const LEVEL_THRESHOLDS = [50, 200, 500, 1000, 2000]; // Points needed to complete each level
 const COLORS = {
     background: 0x222222,
     snake: 0x00ff00,
@@ -57,6 +59,11 @@ const ENEMY_SIZE = 1.5; // enemies are bigger than snake segments
 let ENEMY_HEALTH = 3; // number of hits to kill an enemy (can change after tutorial)
 const ENEMY_SPEED = 0.02; // enemy movement speed
 
+// Level system variables
+let currentLevel = 0; // 0 = tutorial, 1 = first level, etc.
+let levelScore = 0; // Score accumulated in the current level
+let bossSpawned = false; // Flag to track if the boss for the current level has been spawned
+
 // Tutorial state
 let tutorialCompleted = false;
 let firstBossDefeated = false;
@@ -68,6 +75,8 @@ const MINI_BOSS_SPEED = ENEMY_SPEED * 0.5;
 
 // DOM elements
 const scoreElement = document.getElementById('score');
+const levelInfoElement = document.getElementById('levelInfo');
+const progressBarElement = document.getElementById('progressBar');
 const gameOverElement = document.getElementById('gameOver');
 const finalScoreElement = document.getElementById('finalScore');
 const restartButton = document.getElementById('restartButton');
@@ -261,8 +270,12 @@ function moveSnake() {
     ) {
         // Increase score and apples eaten counter
         score += 10; // Increased from 1 to 3 points per apple
+        levelScore += 10; // Add to level score
         applesEaten++;
         scoreElement.textContent = `Score: ${score}`;
+        
+        // Update level progress
+        updateLevelProgress();
         
         // Add new body segment
         const tail = snake[snake.length - 1];
@@ -375,17 +388,34 @@ function updateBullets() {
                     // Award bonus points and spawn a single power-up for mini boss
                     if (enemy.isMiniBoss) {
                         score += 50;
+                        levelScore += 50;
                         // Spawn a single power-up at the boss's position
                         createPowerUp(enemy.position)
                         
-                        // Check if this is the first mini-boss defeated
+                        // Check if this is the first mini-boss defeated (tutorial)
                         if (!tutorialCompleted && !firstBossDefeated) {
                             firstBossDefeated = true;
                             // Pause the game and show tutorial completion message
                             showTutorialCompletion();
+                        } else if (currentLevel > 0) {
+                            // Advance to the next level after defeating a boss
+                            currentLevel++;
+                            levelScore = 0;
+                            bossSpawned = false;
+                            
+                            // Update level info
+                            levelInfoElement.textContent = `Level: ${currentLevel}`;
+                            progressBarElement.style.width = '0%';
+                            
+                            // Increase enemy health for the new level
+                            ENEMY_HEALTH = Math.ceil(ENEMY_HEALTH * 1.5);
                         }
                     } else {
                         score += 10;
+                        levelScore += 10;
+                        
+                        // Update level progress
+                        updateLevelProgress();
                     }
                     
                     enemies.splice(j, 1);
@@ -484,7 +514,12 @@ function formatTime(seconds) {
 function restartGame() {
     // Reset game state
     score = 0;
+    levelScore = 0;
+    currentLevel = 0;
+    bossSpawned = false;
     scoreElement.textContent = `Score: ${score}`;
+    levelInfoElement.textContent = `Level: Tutorial`;
+    progressBarElement.style.width = '0%';
     gameOverElement.style.display = 'none';
     tutorialOverlay.style.display = 'none';
     direction = new THREE.Vector3(1, 0, 0);
@@ -573,7 +608,10 @@ function animate(time) {
     // Spawn enemies at intervals
     const currentTime = Date.now();
     if (gameActive && currentTime - lastEnemySpawnTime > ENEMY_SPAWN_INTERVAL) {
-        createEnemy();
+        // Only spawn regular enemies if we haven't reached the boss spawn threshold
+        if (!bossSpawned) {
+            createEnemy();
+        }
         lastEnemySpawnTime = currentTime;
     }
     
@@ -594,13 +632,14 @@ function animate(time) {
 }
 
 function createEnemy() {
-    // Check if we should spawn a mini boss
-    const isMiniBoss = score >= 50 && !enemies.some(e => e.isMiniBoss);
+    // Only spawn regular enemies through this function
+    // Mini bosses are spawned through createMiniBoss function
+    const isMiniBoss = false;
     
-    // Set enemy properties based on type
-    const size = isMiniBoss ? MINI_BOSS_SIZE : ENEMY_SIZE;
-    const health = isMiniBoss ? MINI_BOSS_HEALTH : ENEMY_HEALTH;
-    const color = isMiniBoss ? COLORS.miniBoss : COLORS.enemy;
+    // Set enemy properties based on current level
+    const size = ENEMY_SIZE;
+    const health = ENEMY_HEALTH * (currentLevel + 1); // Increase health with level
+    const color = COLORS.enemy;
     
     // Create enemy mesh (cube)
     const enemyGeometry = new THREE.BoxGeometry(size, size, size);
@@ -767,7 +806,11 @@ function checkPowerUpCollisions() {
             
             // Play sound or show effect
             score += 5; // Bonus points for collecting power-ups
+            levelScore += 5; // Add to level score
             scoreElement.textContent = `Score: ${score}`;
+            
+            // Update level progress
+            updateLevelProgress();
         }
     }
 }
@@ -864,4 +907,92 @@ function applyTutorialCompletionChanges() {
     
     // Increase enemy health
     ENEMY_HEALTH = ENEMY_HEALTH * 2; // Double enemy health
+    
+    // Update level info
+    currentLevel = 1;
+    levelScore = 0;
+    bossSpawned = false;
+    levelInfoElement.textContent = `Level: ${currentLevel}`;
+    progressBarElement.style.width = '0%';
+}
+
+function updateLevelProgress() {
+    // If we're in the tutorial, check if we've reached the threshold to spawn the boss
+    if (currentLevel === 0 && !bossSpawned && levelScore >= LEVEL_THRESHOLDS[0]) {
+        bossSpawned = true;
+        // Spawn a mini boss for the tutorial
+        createMiniBoss();
+    }
+    // If we're in a regular level (after tutorial)
+    else if (currentLevel > 0 && currentLevel <= LEVEL_THRESHOLDS.length) {
+        // Calculate progress percentage
+        const levelThreshold = LEVEL_THRESHOLDS[currentLevel];
+        const progress = Math.min(100, (levelScore / levelThreshold) * 100);
+        
+        // Update progress bar
+        progressBarElement.style.width = `${progress}%`;
+        
+        // Check if we've reached the threshold to spawn the boss
+        if (!bossSpawned && levelScore >= levelThreshold) {
+            bossSpawned = true;
+            // Spawn a mini boss for this level
+            createMiniBoss();
+        }
+    }
+}
+
+function createMiniBoss() {
+    // Create a mini boss enemy (this is a special case of createEnemy)
+    const isMiniBoss = true;
+    
+    // Create enemy mesh (cube)
+    const enemyGeometry = new THREE.BoxGeometry(MINI_BOSS_SIZE, MINI_BOSS_SIZE, MINI_BOSS_SIZE);
+    const enemyMaterial = new THREE.MeshBasicMaterial({ color: COLORS.miniBoss });
+    const enemyMesh = new THREE.Mesh(enemyGeometry, enemyMaterial);
+    
+    // Place enemy at random position
+    let position;
+    do {
+        position = new THREE.Vector3(
+            Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2,
+            0,
+            Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2
+        );
+    } while (isPositionOccupied(position) || isPositionTooCloseToSnake(position));
+    
+    enemyMesh.position.copy(position);
+    scene.add(enemyMesh);
+    
+    // Create health bar background
+    const healthBarBackgroundGeometry = new THREE.BoxGeometry(MINI_BOSS_SIZE, 0.2, 0.2);
+    const healthBarBackgroundMaterial = new THREE.MeshBasicMaterial({ color: COLORS.healthBarBackground });
+    const healthBarBackground = new THREE.Mesh(healthBarBackgroundGeometry, healthBarBackgroundMaterial);
+    healthBarBackground.position.set(position.x, MINI_BOSS_SIZE, position.z);
+    scene.add(healthBarBackground);
+    
+    // Create health bar
+    const healthBarGeometry = new THREE.BoxGeometry(MINI_BOSS_SIZE, 0.2, 0.2);
+    const healthBarMaterial = new THREE.MeshBasicMaterial({ color: COLORS.healthBar });
+    const healthBar = new THREE.Mesh(healthBarGeometry, healthBarMaterial);
+    healthBar.position.set(position.x, MINI_BOSS_SIZE, position.z);
+    scene.add(healthBar);
+    
+    // Calculate health based on level
+    const health = MINI_BOSS_HEALTH * (currentLevel + 1);
+    
+    // Add enemy to array
+    enemies.push({
+        mesh: enemyMesh,
+        position: position,
+        health: health,
+        maxHealth: health,
+        healthBarBackground: healthBarBackground,
+        healthBar: healthBar,
+        isMiniBoss: isMiniBoss,
+        direction: new THREE.Vector3(
+            Math.random() * 2 - 1,
+            0,
+            Math.random() * 2 - 1
+        ).normalize()
+    });
 }
