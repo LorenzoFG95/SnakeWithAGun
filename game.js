@@ -32,7 +32,7 @@ let powerUpEffects = {
     damage: 1,
     multiShot: 1
 };
-const POWER_UP_SPAWN_INTERVAL = 10000; // milliseconds between power-up spawns
+const POWER_UP_SPAWN_INTERVAL = 20000; // milliseconds between power-up spawns (increased to make them rarer)
 let lastPowerUpSpawnTime = 0;
 let direction = new THREE.Vector3(1, 0, 0);
 let nextDirection = new THREE.Vector3(1, 0, 0);
@@ -260,7 +260,7 @@ function moveSnake() {
         head.position.z === apple.position.z
     ) {
         // Increase score and apples eaten counter
-        score++;
+        score += 10; // Increased from 1 to 3 points per apple
         applesEaten++;
         scoreElement.textContent = `Score: ${score}`;
         
@@ -372,13 +372,11 @@ function updateBullets() {
                     // Increment enemies defeated counter
                     enemiesDefeated++;
                     
-                    // Award bonus points and spawn power-ups for mini boss
+                    // Award bonus points and spawn a single power-up for mini boss
                     if (enemy.isMiniBoss) {
                         score += 50;
-                        // Spawn multiple power-ups
-                        for (let i = 0; i < 3; i++) {
-                            createPowerUp();
-                        }
+                        // Spawn a single power-up at the boss's position
+                        createPowerUp(enemy.position)
                         
                         // Check if this is the first mini-boss defeated
                         if (!tutorialCompleted && !firstBossDefeated) {
@@ -696,7 +694,7 @@ function updateEnemies() {
     });
 }
 
-function createPowerUp() {
+function createPowerUp(customPosition = null) {
     const types = ['fireRate', 'damage', 'multiShot'];
     const type = types[Math.floor(Math.random() * types.length)];
     
@@ -719,15 +717,19 @@ function createPowerUp() {
     const material = new THREE.MeshBasicMaterial({ color: color });
     const mesh = new THREE.Mesh(shape, material);
     
-    // Place power-up at random position
+    // Use custom position if provided, otherwise generate random position
     let position;
-    do {
-        position = new THREE.Vector3(
-            Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2,
-            0,
-            Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2
-        );
-    } while (isPositionOccupied(position));
+    if (customPosition) {
+        position = customPosition.clone();
+    } else {
+        do {
+            position = new THREE.Vector3(
+                Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2,
+                0,
+                Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2
+            );
+        } while (isPositionOccupied(position));
+    }
     
     mesh.position.copy(position);
     scene.add(mesh);
