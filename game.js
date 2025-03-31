@@ -13,6 +13,7 @@ const COLORS = {
     apple: 0xff0000,
     bullet: 0xffff00,
     enemy: 0x0000ff,
+    miniBoss: 0x800080, // Purple color for mini boss
     healthBar: 0xff0000,
     healthBarBackground: 0x555555,
     powerUpFireRate: 0xff9900,
@@ -47,6 +48,11 @@ const ENEMY_SPAWN_INTERVAL = 5000; // milliseconds between enemy spawns
 const ENEMY_SIZE = 1.5; // enemies are bigger than snake segments
 const ENEMY_HEALTH = 3; // number of hits to kill an enemy
 const ENEMY_SPEED = 0.02; // enemy movement speed
+
+// Mini boss constants
+const MINI_BOSS_SIZE = ENEMY_SIZE * 3;
+const MINI_BOSS_HEALTH = ENEMY_HEALTH * 10;
+const MINI_BOSS_SPEED = ENEMY_SPEED * 0.5;
 
 // DOM elements
 const scoreElement = document.getElementById('score');
@@ -206,7 +212,8 @@ function moveSnake() {
         );
         
         // If distance is less than the sum of radii, collision occurred
-        if (distance < (CELL_SIZE / 2 + ENEMY_SIZE / 2)) {
+        const enemySize = enemy.isMiniBoss ? MINI_BOSS_SIZE : ENEMY_SIZE;
+        if (distance < (CELL_SIZE / 2 + enemySize / 2)) {
             gameOver();
             return;
         }
@@ -320,7 +327,8 @@ function updateBullets() {
         for (let j = enemies.length - 1; j >= 0; j--) {
             const enemy = enemies[j];
             
-            if (bullet.position.distanceTo(enemy.position) < ENEMY_SIZE / 2) {
+            const enemySize = enemy.isMiniBoss ? MINI_BOSS_SIZE : ENEMY_SIZE;
+            if (bullet.position.distanceTo(enemy.position) < enemySize / 2) {
                 // Hit enemy
                 enemy.health -= bullet.damage;
                 enemy.healthBar.scale.x = enemy.health / ENEMY_HEALTH;
@@ -334,8 +342,19 @@ function updateBullets() {
                     scene.remove(enemy.mesh);
                     scene.remove(enemy.healthBarBackground);
                     scene.remove(enemy.healthBar);
+                    
+                    // Award bonus points and spawn power-ups for mini boss
+                    if (enemy.isMiniBoss) {
+                        score += 50;
+                        // Spawn multiple power-ups
+                        for (let i = 0; i < 3; i++) {
+                            createPowerUp();
+                        }
+                    } else {
+                        score += 10;
+                    }
+                    
                     enemies.splice(j, 1);
-                    score += 10;
                     scoreElement.textContent = `Score: ${score}`;
                 }
                 
@@ -467,9 +486,17 @@ function animate(time) {
 }
 
 function createEnemy() {
+    // Check if we should spawn a mini boss
+    const isMiniBoss = score >= 50 && !enemies.some(e => e.isMiniBoss);
+    
+    // Set enemy properties based on type
+    const size = isMiniBoss ? MINI_BOSS_SIZE : ENEMY_SIZE;
+    const health = isMiniBoss ? MINI_BOSS_HEALTH : ENEMY_HEALTH;
+    const color = isMiniBoss ? COLORS.miniBoss : COLORS.enemy;
+    
     // Create enemy mesh (cube)
-    const enemyGeometry = new THREE.BoxGeometry(ENEMY_SIZE, ENEMY_SIZE, ENEMY_SIZE);
-    const enemyMaterial = new THREE.MeshBasicMaterial({ color: COLORS.enemy });
+    const enemyGeometry = new THREE.BoxGeometry(size, size, size);
+    const enemyMaterial = new THREE.MeshBasicMaterial({ color: color });
     const enemyMesh = new THREE.Mesh(enemyGeometry, enemyMaterial);
     
     // Place enemy at random position
@@ -503,10 +530,11 @@ function createEnemy() {
     enemies.push({
         mesh: enemyMesh,
         position: position,
-        health: ENEMY_HEALTH,
-        maxHealth: ENEMY_HEALTH,
+        health: health,
+        maxHealth: health,
         healthBarBackground: healthBarBackground,
         healthBar: healthBar,
+        isMiniBoss: isMiniBoss,
         direction: new THREE.Vector3(
             Math.random() * 2 - 1,
             0,
@@ -540,7 +568,8 @@ function updateEnemies() {
             enemy.position
         ).normalize();
         
-        enemy.position.add(direction.multiplyScalar(ENEMY_SPEED));
+        const speed = enemy.isMiniBoss ? MINI_BOSS_SPEED : ENEMY_SPEED;
+        enemy.position.add(direction.multiplyScalar(speed));
         enemy.mesh.position.copy(enemy.position);
         
         // Update health bar position
