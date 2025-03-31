@@ -27,12 +27,42 @@
             text-align: center;
             display: none;
             z-index: 100;
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            min-width: 300px;
+        }
+        .game-stats {
+            margin: 15px 0;
+            font-size: 18px;
+            text-align: left;
+            border-top: 1px solid rgba(255, 255, 255, 0.3);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 10px 0;
+        }
+        .game-stats p {
+            margin: 5px 0;
         }
         #gameOver button {
             padding: 10px 20px;
             font-size: 18px;
             margin-top: 20px;
             cursor: pointer;
+        }
+        #pauseOverlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-family: Arial, sans-serif;
+            font-size: 36px;
+            text-align: center;
+            display: none;
+            z-index: 100;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 20px;
+            border-radius: 10px;
         }
     </style>
 </head>
@@ -41,7 +71,17 @@
     <div id="gameOver">
         <h2>Game Over!</h2>
         <p>Your score: <span id="finalScore">0</span></p>
-        <button id="restartButton">Play Again</button>
+        <div class="game-stats">
+            <p>High score: <span id="highScore">0</span></p>
+            <p>Time played: <span id="timePlayed">00:00</span></p>
+            <p>Apples eaten: <span id="applesEaten">0</span></p>
+            <p>Enemies defeated: <span id="enemiesDefeated">0</span></p>
+        </div>
+        <button id="restartButton">Play Again (R)</button>
+    </div>
+    <div id="pauseOverlay">
+        <h2>Game Paused</h2>
+        <p>Press 'P' to resume</p>
     </div>
     <script type="importmap">
         {

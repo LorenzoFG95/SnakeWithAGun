@@ -36,8 +36,14 @@ let direction = new THREE.Vector3(1, 0, 0);
 let nextDirection = new THREE.Vector3(1, 0, 0);
 let apple;
 let score = 0;
+let highScore = 0; // Track highest score
+let applesEaten = 0; // Track apples eaten
+let enemiesDefeated = 0; // Track enemies defeated
+let gameStartTime = 0; // Track game start time
+let gameTime = 0; // Track total game time
 let lastMoveTime = 0;
 let gameActive = true;
+let isPaused = false; // New variable for pause state
 let bullets = [];
 let enemies = [];
 let lastShotTime = 0;
@@ -59,6 +65,7 @@ const scoreElement = document.getElementById('score');
 const gameOverElement = document.getElementById('gameOver');
 const finalScoreElement = document.getElementById('finalScore');
 const restartButton = document.getElementById('restartButton');
+const pauseOverlay = document.getElementById('pauseOverlay'); // New pause overlay element
 
 // Initialize the game
 init();
@@ -89,8 +96,13 @@ function init() {
     // Create first apple
     createApple();
     
-    // Reset enemy spawn time
+    // Reset enemy spawn time and game start time
     lastEnemySpawnTime = Date.now();
+    gameStartTime = Date.now();
+    
+    // Reset game statistics
+    applesEaten = 0;
+    enemiesDefeated = 0;
     
     // Add event listeners
     window.addEventListener('keydown', handleKeyDown);
@@ -234,8 +246,9 @@ function moveSnake() {
         head.position.x === apple.position.x && 
         head.position.z === apple.position.z
     ) {
-        // Increase score
+        // Increase score and apples eaten counter
         score++;
+        applesEaten++;
         scoreElement.textContent = `Score: ${score}`;
         
         // Add new body segment
@@ -252,7 +265,7 @@ function moveSnake() {
 }
 
 function shootBullet() {
-    if (!gameActive) return;
+    if (!gameActive || isPaused) return;
     
     const currentTime = Date.now();
     if (currentTime - lastShotTime < SHOT_COOLDOWN / powerUpEffects.fireRate) return;
@@ -343,6 +356,9 @@ function updateBullets() {
                     scene.remove(enemy.healthBarBackground);
                     scene.remove(enemy.healthBar);
                     
+                    // Increment enemies defeated counter
+                    enemiesDefeated++;
+                    
                     // Award bonus points and spawn power-ups for mini boss
                     if (enemy.isMiniBoss) {
                         score += 50;
@@ -365,6 +381,15 @@ function updateBullets() {
 }
 
 function handleKeyDown(event) {
+    // Handle pause toggle with 'p' key
+    if (event.key === 'p' || event.key === 'P') {
+        togglePause();
+        return;
+    }
+    
+    // If game is paused, don't process other inputs
+    if (isPaused) return;
+    
     // Handle direction changes
     switch (event.key) {
         case 'ArrowUp':
@@ -394,6 +419,10 @@ function handleKeyDown(event) {
         case ' ': // Spacebar to shoot
             shootBullet();
             break;
+        case 'r': // Press R to restart
+        case 'R':
+            restartGame();
+            break;
     }
 }
 
@@ -405,8 +434,33 @@ function handleResize() {
 
 function gameOver() {
     gameActive = false;
+    
+    // Calculate total game time in seconds
+    gameTime = Math.floor((Date.now() - gameStartTime) / 1000);
+    
+    // Update high score if current score is higher
+    if (score > highScore) {
+        highScore = score;
+    }
+    
+    // Update final score element
     finalScoreElement.textContent = score;
+    
+    // Update game over screen with additional information
+    document.getElementById('highScore').textContent = highScore;
+    document.getElementById('timePlayed').textContent = formatTime(gameTime);
+    document.getElementById('applesEaten').textContent = applesEaten;
+    document.getElementById('enemiesDefeated').textContent = enemiesDefeated;
+    
+    // Show game over screen
     gameOverElement.style.display = 'block';
+}
+
+// Helper function to format time as MM:SS
+function formatTime(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
 function restartGame() {
@@ -418,6 +472,11 @@ function restartGame() {
     nextDirection = new THREE.Vector3(1, 0, 0);
     gameActive = true;
     currentMoveInterval = INITIAL_MOVE_INTERVAL; // Reset speed to initial value
+    
+    // Reset game statistics
+    applesEaten = 0;
+    enemiesDefeated = 0;
+    gameStartTime = Date.now();
     
     // Reset power-up effects
     powerUpEffects = {
@@ -452,6 +511,12 @@ function restartGame() {
 
 function animate(time) {
     requestAnimationFrame(animate);
+    
+    // If game is paused, only render the scene and return
+    if (isPaused) {
+        renderer.render(scene, camera);
+        return;
+    }
     
     // Move snake at intervals that get faster as the game progresses
     if (gameActive && time - lastMoveTime > currentMoveInterval) {
@@ -680,4 +745,21 @@ function removeEnemy(index) {
     
     // Remove enemy from array
     enemies.splice(index, 1);
+}
+
+function togglePause() {
+    // Only allow pausing if the game is active
+    if (!gameActive) return;
+    
+    isPaused = !isPaused;
+    
+    if (isPaused) {
+        // Show pause overlay
+        pauseOverlay.style.display = 'block';
+    } else {
+        // Hide pause overlay
+        pauseOverlay.style.display = 'none';
+        // Reset lastMoveTime to prevent snake from moving immediately after unpausing
+        lastMoveTime = performance.now();
+    }
 }
