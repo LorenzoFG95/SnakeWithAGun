@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="A classic snake game with a twist.">
+    <link rel="icon" type="image/x-icon" href="/assets/snake.png">
     <title>Snake With A Gun</title>
     <style>
         body { margin: 0; overflow: hidden; }
@@ -42,6 +44,61 @@
             background-color: #00ff00;
             transition: width 0.3s ease-in-out;
         }
+        /* Mobile controls styling */
+        #mobileControls {
+            display: none; /* Hidden by default */
+            position: fixed;
+            bottom: 20px;
+            width: 100%;
+            z-index: 200;
+        }
+        .controlsContainer {
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+        }
+        .directionControls {
+            display: grid;
+            grid-template-columns: repeat(3, 60px);
+            grid-template-rows: repeat(3, 60px);
+            gap: 5px;
+        }
+        .controlBtn {
+            width: 60px;
+            height: 60px;
+            background-color: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            color: white;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+        #upBtn { grid-column: 2; grid-row: 1; }
+        #leftBtn { grid-column: 1; grid-row: 2; }
+        #rightBtn { grid-column: 3; grid-row: 2; }
+        #downBtn { grid-column: 2; grid-row: 3; }
+        #shootBtn {
+            width: 80px;
+            height: 80px;
+            background-color: rgba(255, 0, 0, 0.5);
+            margin-top: 20px;
+        }
+        /* Mobile/Desktop specific content */
+        .desktop-only { display: block; }
+        .mobile-only { display: none; }
+        
+        /* Only show mobile controls and content on small screens */
+        @media (max-width: 768px) {
+            #mobileControls {
+                display: block;
+            }
+            .desktop-only { display: none; }
+            .mobile-only { display: block; }
+        }
         #gameOver {
             position: absolute;
             top: 50%;
@@ -52,7 +109,7 @@
             font-size: 36px;
             text-align: center;
             display: none;
-            z-index: 100;
+            z-index: 300; /* Increased z-index to be above mobile controls */
             background-color: rgba(0, 0, 0, 0.8);
             padding: 20px;
             border-radius: 10px;
@@ -70,10 +127,24 @@
             margin: 5px 0;
         }
         #gameOver button {
-            padding: 10px 20px;
-            font-size: 18px;
+            padding: 15px 25px;
+            font-size: 20px;
             margin-top: 20px;
             cursor: pointer;
+            border-radius: 8px;
+            border: none;
+            background-color: #4CAF50;
+            color: white;
+            font-weight: bold;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+        
+        /* Adjust game over screen for mobile */
+        @media (max-width: 768px) {
+            #gameOver {
+                padding-bottom: 100px; /* Add padding at the bottom to avoid overlap with controls */
+            }
         }
         #pauseOverlay {
             position: absolute;
@@ -111,13 +182,26 @@
     </div>
     <div id="pauseOverlay">
         <h2>Game Paused</h2>
-        <p>Press 'P' to resume</p>
+        <p class="desktop-only">Press 'P' to resume</p>
+        <p class="mobile-only">Tap the pause button to resume</p>
     </div>
     <div id="tutorialOverlay" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: white; font-family: Arial, sans-serif; font-size: 36px; text-align: center; display: none; z-index: 100; background-color: rgba(0, 0, 0, 0.8); padding: 20px; border-radius: 10px;">
         <h2>Tutorial Completed!</h2>
         <p>You defeated the first boss!</p>
         <p>The game will now become more challenging...</p>
         <p style="font-size: 24px; margin-top: 20px;">Press any key to continue</p>
+    </div>
+    <!-- Mobile Controls -->
+    <div id="mobileControls">
+        <div class="controlsContainer">
+            <div class="directionControls">
+                <div id="upBtn" class="controlBtn">↑</div>
+                <div id="leftBtn" class="controlBtn">←</div>
+                <div id="rightBtn" class="controlBtn">→</div>
+                <div id="downBtn" class="controlBtn">↓</div>
+            </div>
+            <div id="shootBtn" class="controlBtn">SHOOT</div>
+        </div>
     </div>
     <a target="_blank" href="https://jam.pieter.com" style="font-family: 'system-ui', sans-serif; position: fixed; bottom: -1px; right: -1px; padding: 7px; font-size: 14px; font-weight: bold; background: #fff; color: #000; text-decoration: none; z-index: 10; border-top-left-radius: 12px; z-index: 10000; border: 1px solid #fff;">🕹️ Vibe Jam 2025</a>
     <script type="importmap">

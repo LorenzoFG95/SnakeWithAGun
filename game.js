@@ -61,7 +61,7 @@ const SHOT_COOLDOWN = 500; // milliseconds between shots
 const ENEMY_SPAWN_INTERVAL = 5000; // milliseconds between enemy spawns
 const ENEMY_SIZE = 1.5; // enemies are bigger than snake segments
 let ENEMY_HEALTH = 3; // number of hits to kill an enemy (can change after tutorial)
-const ENEMY_SPEED = 0.02; // enemy movement speed
+const ENEMY_SPEED = 0.03; // enemy movement speed
 
 // Level system variables
 let currentLevel = 0; // 0 = tutorial, 1 = first level, etc.
@@ -143,6 +143,9 @@ function init() {
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('resize', handleResize);
     restartButton.addEventListener('click', restartGame);
+    
+    // Add mobile control event listeners
+    setupMobileControls();
 }
 
 function createSnake() {
@@ -359,7 +362,7 @@ function shootBullet() {
             mesh: bulletMesh,
             position: head.position.clone(),
             direction: dir,
-            speed: 0.2,
+            speed: 0.3,
             damage: powerUpEffects.damage
         });
     });
@@ -1054,6 +1057,23 @@ function showTutorialCompletion() {
         // Don't continue if the key pressed was 'p' (to prevent immediate unpausing)
         if (event.key === 'p' || event.key === 'P') return;
         
+        continueTutorial();
+        
+        // Remove this event listener
+        window.removeEventListener('keydown', continueHandler);
+    };
+    
+    // Add touch event for mobile users
+    const touchHandler = function() {
+        continueTutorial();
+        
+        // Remove this event listener
+        tutorialOverlay.removeEventListener('touchstart', touchHandler);
+        tutorialOverlay.removeEventListener('click', touchHandler);
+    };
+    
+    // Helper function to continue after tutorial
+    function continueTutorial() {
         // Hide tutorial overlay
         tutorialOverlay.style.display = 'none';
         
@@ -1067,12 +1087,11 @@ function showTutorialCompletion() {
         // Mark tutorial as completed and reset tutorial boss fight flag
         tutorialCompleted = true;
         isTutorialBossFight = false;
-        
-        // Remove this event listener
-        window.removeEventListener('keydown', continueHandler);
-    };
+    }
     
     window.addEventListener('keydown', continueHandler);
+    tutorialOverlay.addEventListener('touchstart', touchHandler, { passive: true });
+    tutorialOverlay.addEventListener('click', touchHandler); // Also add click for testing on desktop
 }
 
 function applyTutorialCompletionChanges() {
@@ -1184,5 +1203,87 @@ function createMiniBoss() {
             0,
             Math.random() * 2 - 1
         ).normalize()
+    });
+}
+
+// Mobile controls setup function
+function setupMobileControls() {
+    // Get mobile control elements
+    const upBtn = document.getElementById('upBtn');
+    const downBtn = document.getElementById('downBtn');
+    const leftBtn = document.getElementById('leftBtn');
+    const rightBtn = document.getElementById('rightBtn');
+    const shootBtn = document.getElementById('shootBtn');
+    
+    // Helper function to handle both touch and mouse events
+    const addMobileControlEvents = (element, handler) => {
+        // Touch events
+        element.addEventListener('touchstart', handler, { passive: true });
+        // Mouse events (for testing on desktop)
+        element.addEventListener('mousedown', handler);
+    };
+    
+    // Direction button handlers
+    addMobileControlEvents(upBtn, (e) => {
+        e.preventDefault();
+        if (!isPaused && gameActive && direction.z !== 1) { // Not moving backward
+            nextDirection.set(0, 0, -1);
+        }
+    });
+    
+    addMobileControlEvents(downBtn, (e) => {
+        e.preventDefault();
+        if (!isPaused && gameActive && direction.z !== -1) { // Not moving forward
+            nextDirection.set(0, 0, 1);
+        }
+    });
+    
+    addMobileControlEvents(leftBtn, (e) => {
+        e.preventDefault();
+        if (!isPaused && gameActive && direction.x !== 1) { // Not moving right
+            nextDirection.set(-1, 0, 0);
+        }
+    });
+    
+    addMobileControlEvents(rightBtn, (e) => {
+        e.preventDefault();
+        if (!isPaused && gameActive && direction.x !== -1) { // Not moving left
+            nextDirection.set(1, 0, 0);
+        }
+    });
+    
+    // Shoot button handler
+    addMobileControlEvents(shootBtn, (e) => {
+        e.preventDefault();
+        if (!isPaused && gameActive) {
+            shootBullet();
+        }
+    });
+    
+    // Add pause button functionality to mobile
+    const pauseBtn = document.createElement('div');
+    pauseBtn.id = 'pauseBtn';
+    pauseBtn.className = 'controlBtn';
+    pauseBtn.style.position = 'absolute';
+    pauseBtn.style.top = '10px';
+    pauseBtn.style.right = '10px';
+    pauseBtn.style.zIndex = '200';
+    pauseBtn.style.backgroundColor = 'rgba(255, 255, 255, 0.3)';
+    pauseBtn.innerHTML = '⏸️';
+    document.body.appendChild(pauseBtn);
+    
+    // Only show pause button on mobile
+    pauseBtn.style.display = 'none';
+    const mediaQuery = window.matchMedia('(max-width: 768px)');
+    if (mediaQuery.matches) {
+        pauseBtn.style.display = 'flex';
+    }
+    mediaQuery.addEventListener('change', (e) => {
+        pauseBtn.style.display = e.matches ? 'flex' : 'none';
+    });
+    
+    addMobileControlEvents(pauseBtn, (e) => {
+        e.preventDefault();
+        togglePause();
     });
 }
