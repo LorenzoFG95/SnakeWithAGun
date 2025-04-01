@@ -97,6 +97,9 @@ const GIGA_BOSS_HEALTH = MINI_BOSS_HEALTH * 10; // Giga Boss has 10x health of m
 const GIGA_BOSS_SPEED = MINI_BOSS_SPEED * 0.7; // Giga Boss is slower than mini bosses
 const GIGA_BOSS_SPAWN_INTERVAL = 5000; // Milliseconds between enemy spawns by Giga Boss
 
+// Enemy inactive period constant
+const ENEMY_INVULNERABILITY_PERIOD = 2000; // Milliseconds of inactivity after spawn
+
 
 // DOM elements
 const scoreElement = document.getElementById('score');
@@ -266,16 +269,21 @@ function moveSnake() {
         }
     }
     
-    // Check for enemy collision
+    // Check for enemy collision (only with active enemies)
     for (let i = 0; i < enemies.length; i++) {
         const enemy = enemies[i];
+        // Skip collision check for inactive enemies
+        if (!enemy.isActive) continue;
+        
         const distance = Math.sqrt(
             Math.pow(newHeadPosition.x - enemy.position.x, 2) +
             Math.pow(newHeadPosition.z - enemy.position.z, 2)
         );
         
         // If distance is less than the sum of radii, collision occurred
-        const enemySize = enemy.isMiniBoss ? MINI_BOSS_SIZE : ENEMY_SIZE;
+        const enemySize = enemy.isMiniBoss ? MINI_BOSS_SIZE : 
+                         enemy.isAppleEater ? APPLE_EATER_SIZE : 
+                         enemy.isTankEnemy ? TANK_ENEMY_SIZE : ENEMY_SIZE;
         if (distance < (CELL_SIZE / 2 + enemySize / 2)) {
             gameOver();
             return;
@@ -405,11 +413,13 @@ function updateBullets() {
         for (let j = enemies.length - 1; j >= 0; j--) {
             const enemy = enemies[j];
             
-            const enemySize = enemy.isMiniBoss ? MINI_BOSS_SIZE : ENEMY_SIZE;
+            const enemySize = enemy.isMiniBoss ? MINI_BOSS_SIZE : 
+                             enemy.isAppleEater ? APPLE_EATER_SIZE : 
+                             enemy.isTankEnemy ? TANK_ENEMY_SIZE : ENEMY_SIZE;
             if (bullet.position.distanceTo(enemy.position) < enemySize / 2) {
-                // Hit enemy
+                // Hit enemy (all enemies are vulnerable from the start)
                 enemy.health -= bullet.damage;
-                enemy.healthBar.scale.x = enemy.health / ENEMY_HEALTH;
+                enemy.healthBar.scale.x = enemy.health / enemy.maxHealth;
                 
                 // Show floating damage text
                 createFloatingText(`-${bullet.damage}`, '#ff0000', bullet.position);
@@ -820,12 +830,18 @@ function createEnemy(customPosition = null, forceType = null) {
         isAppleEater: isAppleEater,
         isTankEnemy: isTankEnemy, // New property to identify tank enemies
         hasEatenApple: false, // Track if this apple eater has eaten an apple
+        isActive: false, // Start as inactive (won't move or kill player)
+        spawnTime: Date.now(), // Track when the enemy was spawned
         direction: new THREE.Vector3(
             Math.random() * 2 - 1,
             0,
             Math.random() * 2 - 1
         ).normalize()
     });
+    
+    // Make the enemy semi-transparent during inactive period
+    enemyMesh.material.transparent = true;
+    enemyMesh.material.opacity = 0.5;
     
     return position; // Return position for wave spawning purposes
 }
@@ -1067,10 +1083,17 @@ function isPositionTooCloseToSnake(position) {
 }
 
 function updateEnemies() {
-    // Track the current time for Giga Boss enemy spawning
+    // Track the current time for Giga Boss enemy spawning and invulnerability check
     const currentTime = Date.now();
     
     enemies.forEach(enemy => {
+        // Check if enemy is still in inactive period
+        if (!enemy.isActive && (currentTime - enemy.spawnTime > ENEMY_INVULNERABILITY_PERIOD)) {
+            // Inactive period is over
+            enemy.isActive = true;
+            enemy.mesh.material.opacity = 1.0;
+            enemy.mesh.material.transparent = false;
+        }
         // Check if this is a Giga Boss and should spawn enemies
         if (enemy.isGigaBoss && currentTime - enemy.lastEnemySpawnTime > GIGA_BOSS_SPAWN_INTERVAL) {
             // Spawn a random enemy near the Giga Boss
@@ -1078,8 +1101,8 @@ function updateEnemies() {
             enemy.lastEnemySpawnTime = currentTime;
         }
         
-        // Skip movement for tank enemies as they are stationary
-        if (!enemy.isTankEnemy) {
+        // Skip movement for inactive enemies or tank enemies
+        if (enemy.isActive && !enemy.isTankEnemy) {
             let targetPosition;
             
             // Determine target based on enemy type
@@ -1549,12 +1572,18 @@ function createMiniBoss(customPosition = null) {
         healthBarBackground: healthBarBackground,
         healthBar: healthBar,
         isMiniBoss: isMiniBoss,
+        isInvulnerable: true, // Start as invulnerable
+        spawnTime: Date.now(), // Track when the enemy was spawned
         direction: new THREE.Vector3(
             Math.random() * 2 - 1,
             0,
             Math.random() * 2 - 1
         ).normalize()
     });
+    
+    // Make the enemy semi-transparent during invulnerability period
+    enemyMesh.material.transparent = true;
+    enemyMesh.material.opacity = 0.5;
     
     return position; // Return position for wave spawning purposes
 }
@@ -1641,12 +1670,18 @@ function createGigaBoss(customPosition = null) {
         isMiniBoss: false, // Not a mini boss
         isGigaBoss: true, // Special flag for Giga Boss
         lastEnemySpawnTime: Date.now(), // Track when the boss last spawned an enemy
+        isInvulnerable: true, // Start as invulnerable
+        spawnTime: Date.now(), // Track when the enemy was spawned
         direction: new THREE.Vector3(
             Math.random() * 2 - 1,
             0,
             Math.random() * 2 - 1
         ).normalize()
     });
+    
+    // Make the enemy semi-transparent during invulnerability period
+    bodyMesh.material.transparent = true;
+    bodyMesh.material.opacity = 0.5;
     
     // Create floating text to announce the boss
     createFloatingText("GIGA BOSS APPEARS!", '#ff0000', new THREE.Vector3(0, GIGA_BOSS_SIZE * 2, 0));
