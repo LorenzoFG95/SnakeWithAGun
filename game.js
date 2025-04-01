@@ -56,6 +56,7 @@ let enemies = [];
 let lastShotTime = 0;
 let lastEnemySpawnTime = 0;
 let currentMoveInterval = INITIAL_MOVE_INTERVAL; // track current speed
+let isTutorialBossFight = false; // Track if tutorial boss fight is active
 const SHOT_COOLDOWN = 500; // milliseconds between shots
 const ENEMY_SPAWN_INTERVAL = 5000; // milliseconds between enemy spawns
 const ENEMY_SIZE = 1.5; // enemies are bigger than snake segments
@@ -134,6 +135,7 @@ function init() {
     // Reset tutorial state
     tutorialCompleted = false;
     firstBossDefeated = false;
+    isTutorialBossFight = false;
     GRID_SIZE = 20; // Reset grid size to initial value
     ENEMY_HEALTH = 3; // Reset enemy health to initial value
     
@@ -566,6 +568,7 @@ function restartGame() {
     // Reset tutorial state
     tutorialCompleted = false;
     firstBossDefeated = false;
+    isTutorialBossFight = false;
     
     // Reset grid size and enemy health
     GRID_SIZE = 20;
@@ -670,12 +673,16 @@ function animate(time) {
 }
 
 function createEnemy() {
+    // Skip enemy creation during tutorial boss fight
+    if (isTutorialBossFight) return;
+    
     // Only spawn regular enemies through this function
     // Mini bosses are spawned through createMiniBoss function
     const isMiniBoss = false;
     
     // Determine if this will be an apple-eating enemy
-    const isAppleEater = Math.random() < APPLE_EATER_CHANCE;
+    // Only allow apple eaters after tutorial is completed
+    const isAppleEater = tutorialCompleted && Math.random() < APPLE_EATER_CHANCE;
     
     // Set enemy properties based on current level and type
     const size = isAppleEater ? APPLE_EATER_SIZE : ENEMY_SIZE;
@@ -1057,8 +1064,9 @@ function showTutorialCompletion() {
         isPaused = false;
         lastMoveTime = performance.now();
         
-        // Mark tutorial as completed
+        // Mark tutorial as completed and reset tutorial boss fight flag
         tutorialCompleted = true;
+        isTutorialBossFight = false;
         
         // Remove this event listener
         window.removeEventListener('keydown', continueHandler);
@@ -1101,6 +1109,7 @@ function updateLevelProgress() {
     // If we're in the tutorial, check if we've reached the threshold to spawn the boss
     if (currentLevel === 0 && !bossSpawned && levelScore >= LEVEL_THRESHOLDS[0]) {
         bossSpawned = true;
+        isTutorialBossFight = true; // Set tutorial boss fight flag
         // Spawn a mini boss for the tutorial
         createMiniBoss();
     }
