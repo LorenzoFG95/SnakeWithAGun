@@ -52,7 +52,7 @@ let gameStartTime = 0; // Track game start time
 let gameTime = 0; // Track total game time
 let lastMoveTime = 0;
 let gameActive = true;
-let isPaused = false; // New variable for pause state
+let isPaused = true; // Game starts paused with start menu visible
 let bullets = [];
 let enemies = [];
 let lastShotTime = 0;
@@ -1690,6 +1690,16 @@ function createGigaBoss(customPosition = null) {
 }
 
 // Mobile controls setup function
+// Start menu functionality
+const startMenu = document.getElementById('startMenu');
+const startButton = document.getElementById('startButton');
+
+startButton.addEventListener('click', () => {
+    startMenu.style.display = 'none';
+    togglePause();
+    gameActive = true;
+});
+
 function setupMobileControls() {
     // Get mobile control elements
     const upBtn = document.getElementById('upBtn');
