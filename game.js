@@ -21,6 +21,7 @@ const COLORS = {
     appleEater: 0xff8800, // Orange color for apple-eating enemy
     appleEaterBoss: 0xff00ff, // Magenta color for transformed apple-eater boss
     tankEnemy: 0x663300, // Brown color for tank enemy
+    gigaBoss: 0x990000, // Dark red color for giga boss
     healthBar: 0xff0000,
     healthBarBackground: 0x555555,
     powerUpFireRate: 0xff9900,
@@ -89,6 +90,12 @@ const APPLE_EATER_BOSS_HEALTH = MINI_BOSS_HEALTH * 0.7; // Transformed boss has 
 const TANK_ENEMY_CHANCE = 0.08; // 8% chance to spawn a tank enemy
 const TANK_ENEMY_SIZE = ENEMY_SIZE * 1.5; // Tank enemies are larger
 const TANK_ENEMY_HEALTH = ENEMY_HEALTH * 5; // Tank enemies have 5x health
+
+// Giga Boss constants
+const GIGA_BOSS_SIZE = MINI_BOSS_SIZE * 3; // Giga Boss is 3x larger than mini bosses
+const GIGA_BOSS_HEALTH = MINI_BOSS_HEALTH * 10; // Giga Boss has 10x health of mini bosses
+const GIGA_BOSS_SPEED = MINI_BOSS_SPEED * 0.7; // Giga Boss is slower than mini bosses
+const GIGA_BOSS_SPAWN_INTERVAL = 5000; // Milliseconds between enemy spawns by Giga Boss
 
 
 // DOM elements
@@ -420,8 +427,43 @@ function updateBullets() {
                     // Increment enemies defeated counter
                     enemiesDefeated++;
                     
+                    // Special handling for Giga Boss defeat
+                    if (enemy.isGigaBoss) {
+                        const points = 500; // Massive points for defeating the Giga Boss
+                        score += points;
+                        levelScore += points;
+                        
+                        // Show floating text
+                        createFloatingText(`+${points}`, '#00ff00', enemy.position);
+                        createFloatingText("GIGA BOSS DEFEATED!", '#ffff00', new THREE.Vector3(0, GIGA_BOSS_SIZE * 2, 0));
+                        
+                        // Spawn multiple power-ups in a circle around the defeated boss
+                        const numPowerUps = 5;
+                        for (let i = 0; i < numPowerUps; i++) {
+                            const angle = (i / numPowerUps) * Math.PI * 2;
+                            const distance = 3;
+                            const powerUpPos = new THREE.Vector3(
+                                enemy.position.x + Math.cos(angle) * distance,
+                                0,
+                                enemy.position.z + Math.sin(angle) * distance
+                            );
+                            createPowerUp(powerUpPos);
+                        }
+                        
+                        // Advance to the next level after defeating the Giga Boss
+                        currentLevel++;
+                        levelScore = 0;
+                        bossSpawned = false;
+                        
+                        // Update level info
+                        levelInfoElement.textContent = `Level: ${currentLevel}`;
+                        progressBarElement.style.width = '0%';
+                        
+                        // Increase enemy health for the new level
+                        ENEMY_HEALTH = Math.ceil(ENEMY_HEALTH * 1.5);
+                    }
                     // Award bonus points and spawn a single power-up for mini boss
-                    if (enemy.isMiniBoss) {
+                    else if (enemy.isMiniBoss) {
                         const points = 50;
                         score += points;
                         levelScore += points;
@@ -681,18 +723,30 @@ function animate(time) {
     renderer.render(scene, camera);
 }
 
-function createEnemy() {
-    // Skip enemy creation during tutorial boss fight
-    if (isTutorialBossFight) return;
+function createEnemy(customPosition = null, forceType = null) {
+    // Skip enemy creation during tutorial boss fight if not part of a boss wave
+    if (isTutorialBossFight && forceType === null) return;
     
     // Only spawn regular enemies through this function
     // Mini bosses are spawned through createMiniBoss function
     const isMiniBoss = false;
     
-    // Determine enemy type based on random chance
-    // Only allow special enemies after tutorial is completed
-    const isAppleEater = tutorialCompleted && Math.random() < APPLE_EATER_CHANCE;
-    const isTankEnemy = tutorialCompleted && !isAppleEater && Math.random() < TANK_ENEMY_CHANCE;
+    // Determine enemy type based on random chance or forced type
+    // Only allow special enemies after tutorial is completed or if forced
+    let isAppleEater = false;
+    let isTankEnemy = false;
+    
+    if (forceType === 'appleEater') {
+        isAppleEater = true;
+    } else if (forceType === 'tankEnemy') {
+        isTankEnemy = true;
+    } else if (forceType === 'regular') {
+        // Force regular enemy
+    } else {
+        // Random type selection for normal spawning
+        isAppleEater = tutorialCompleted && Math.random() < APPLE_EATER_CHANCE;
+        isTankEnemy = tutorialCompleted && !isAppleEater && Math.random() < TANK_ENEMY_CHANCE;
+    }
     
     // Set enemy properties based on current level and type
     let size, health, color, enemyGeometry;
@@ -722,15 +776,19 @@ function createEnemy() {
     const enemyMaterial = new THREE.MeshBasicMaterial({ color: color });
     const enemyMesh = new THREE.Mesh(enemyGeometry, enemyMaterial);
     
-    // Place enemy at random position
+    // Place enemy at random position or use custom position if provided
     let position;
-    do {
-        position = new THREE.Vector3(
-            Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2,
-            0,
-            Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2
-        );
-    } while (isPositionOccupied(position) || isPositionTooCloseToSnake(position));
+    if (customPosition) {
+        position = customPosition.clone();
+    } else {
+        do {
+            position = new THREE.Vector3(
+                Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2,
+                0,
+                Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2
+            );
+        } while (isPositionOccupied(position) || isPositionTooCloseToSnake(position));
+    }
     
     enemyMesh.position.copy(position);
     scene.add(enemyMesh);
@@ -767,7 +825,228 @@ function createEnemy() {
             0,
             Math.random() * 2 - 1
         ).normalize()
-    });}
+    });
+    
+    return position; // Return position for wave spawning purposes
+}
+
+// Function to start boss fight based on current level
+function startBossFight(level) {
+    // Clear any existing enemies first
+    clearExistingEnemies();
+    
+    // Spawn appropriate boss fight wave based on level
+    switch(level) {
+        case 1:
+            // First boss fight: 2 mini bosses with 4 regular enemies
+            spawnBossFightWave1();
+            break;
+        case 2:
+            // Second boss fight: 4 apple eaters and 4 tank enemies
+            spawnBossFightWave2();
+            break;
+        case 3:
+            // Third boss fight: 3 mini bosses, 2 apple eaters, 4 regular enemies, 4 tank enemies
+            spawnBossFightWave3();
+            break;
+        default:
+            // For levels beyond 3, create a random mix of enemies that gets harder
+            spawnRandomBossFightWave(level);
+            break;
+    }
+}
+
+// Clear existing enemies to prepare for boss fight
+function clearExistingEnemies() {
+    // Remove all non-boss enemies from the scene
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        if (!enemies[i].isMiniBoss) {
+            scene.remove(enemies[i].mesh);
+            scene.remove(enemies[i].healthBarBackground);
+            scene.remove(enemies[i].healthBar);
+            enemies.splice(i, 1);
+        }
+    }
+}
+
+// First boss fight wave: 2 mini bosses with 4 regular enemies
+function spawnBossFightWave1() {
+    // Calculate positions for a circular formation
+    const centerX = 0;
+    const centerZ = 0;
+    const radius = GRID_SIZE / 3;
+    
+    // Spawn 2 mini bosses at opposite sides
+    const miniBossPos1 = new THREE.Vector3(centerX + radius, 0, centerZ);
+    const miniBossPos2 = new THREE.Vector3(centerX - radius, 0, centerZ);
+    
+    createMiniBoss(miniBossPos1);
+    createMiniBoss(miniBossPos2);
+    
+    // Spawn 4 regular enemies in a square formation around the mini bosses
+    const regularEnemyPos1 = new THREE.Vector3(centerX + radius/2, 0, centerZ + radius/2);
+    const regularEnemyPos2 = new THREE.Vector3(centerX + radius/2, 0, centerZ - radius/2);
+    const regularEnemyPos3 = new THREE.Vector3(centerX - radius/2, 0, centerZ + radius/2);
+    const regularEnemyPos4 = new THREE.Vector3(centerX - radius/2, 0, centerZ - radius/2);
+    
+    createEnemy(regularEnemyPos1, 'regular');
+    createEnemy(regularEnemyPos2, 'regular');
+    createEnemy(regularEnemyPos3, 'regular');
+    createEnemy(regularEnemyPos4, 'regular');
+}
+
+// Second boss fight wave: 4 apple eaters and 4 tank enemies
+function spawnBossFightWave2() {
+    // Calculate positions for a circular formation
+    const centerX = 0;
+    const centerZ = 0;
+    const radius = GRID_SIZE / 3;
+    
+    // Spawn 4 apple eaters in a diamond formation
+    const appleEaterPos1 = new THREE.Vector3(centerX + radius, 0, centerZ);
+    const appleEaterPos2 = new THREE.Vector3(centerX, 0, centerZ + radius);
+    const appleEaterPos3 = new THREE.Vector3(centerX - radius, 0, centerZ);
+    const appleEaterPos4 = new THREE.Vector3(centerX, 0, centerZ - radius);
+    
+    createEnemy(appleEaterPos1, 'appleEater');
+    createEnemy(appleEaterPos2, 'appleEater');
+    createEnemy(appleEaterPos3, 'appleEater');
+    createEnemy(appleEaterPos4, 'appleEater');
+    
+    // Spawn 4 tank enemies in a square formation
+    const tankEnemyPos1 = new THREE.Vector3(centerX + radius/2, 0, centerZ + radius/2);
+    const tankEnemyPos2 = new THREE.Vector3(centerX + radius/2, 0, centerZ - radius/2);
+    const tankEnemyPos3 = new THREE.Vector3(centerX - radius/2, 0, centerZ + radius/2);
+    const tankEnemyPos4 = new THREE.Vector3(centerX - radius/2, 0, centerZ - radius/2);
+    
+    createEnemy(tankEnemyPos1, 'tankEnemy');
+    createEnemy(tankEnemyPos2, 'tankEnemy');
+    createEnemy(tankEnemyPos3, 'tankEnemy');
+    createEnemy(tankEnemyPos4, 'tankEnemy');
+}
+
+// Third boss fight wave: 3 mini bosses, 2 apple eaters, 4 regular enemies, 4 tank enemies
+function spawnBossFightWave3() {
+    // Calculate positions for a complex formation
+    const centerX = 0;
+    const centerZ = 0;
+    const outerRadius = GRID_SIZE / 3;
+    const innerRadius = GRID_SIZE / 5;
+    
+    // Spawn 3 mini bosses in a triangle formation
+    const angle1 = 0;
+    const angle2 = 2 * Math.PI / 3;
+    const angle3 = 4 * Math.PI / 3;
+    
+    const miniBossPos1 = new THREE.Vector3(centerX + outerRadius * Math.cos(angle1), 0, centerZ + outerRadius * Math.sin(angle1));
+    const miniBossPos2 = new THREE.Vector3(centerX + outerRadius * Math.cos(angle2), 0, centerZ + outerRadius * Math.sin(angle2));
+    const miniBossPos3 = new THREE.Vector3(centerX + outerRadius * Math.cos(angle3), 0, centerZ + outerRadius * Math.sin(angle3));
+    
+    createMiniBoss(miniBossPos1);
+    createMiniBoss(miniBossPos2);
+    createMiniBoss(miniBossPos3);
+    
+    // Spawn 2 apple eaters
+    const appleEaterPos1 = new THREE.Vector3(centerX + innerRadius, 0, centerZ);
+    const appleEaterPos2 = new THREE.Vector3(centerX - innerRadius, 0, centerZ);
+    
+    createEnemy(appleEaterPos1, 'appleEater');
+    createEnemy(appleEaterPos2, 'appleEater');
+    
+    // Spawn 4 regular enemies in a square formation
+    const regularEnemyPos1 = new THREE.Vector3(centerX + innerRadius/2, 0, centerZ + innerRadius/2);
+    const regularEnemyPos2 = new THREE.Vector3(centerX + innerRadius/2, 0, centerZ - innerRadius/2);
+    const regularEnemyPos3 = new THREE.Vector3(centerX - innerRadius/2, 0, centerZ + innerRadius/2);
+    const regularEnemyPos4 = new THREE.Vector3(centerX - innerRadius/2, 0, centerZ - innerRadius/2);
+    
+    createEnemy(regularEnemyPos1, 'regular');
+    createEnemy(regularEnemyPos2, 'regular');
+    createEnemy(regularEnemyPos3, 'regular');
+    createEnemy(regularEnemyPos4, 'regular');
+    
+    // Spawn 4 tank enemies in an outer square formation
+    const tankAngle1 = Math.PI / 4;
+    const tankAngle2 = 3 * Math.PI / 4;
+    const tankAngle3 = 5 * Math.PI / 4;
+    const tankAngle4 = 7 * Math.PI / 4;
+    
+    const tankEnemyPos1 = new THREE.Vector3(centerX + innerRadius * Math.cos(tankAngle1), 0, centerZ + innerRadius * Math.sin(tankAngle1));
+    const tankEnemyPos2 = new THREE.Vector3(centerX + innerRadius * Math.cos(tankAngle2), 0, centerZ + innerRadius * Math.sin(tankAngle2));
+    const tankEnemyPos3 = new THREE.Vector3(centerX + innerRadius * Math.cos(tankAngle3), 0, centerZ + innerRadius * Math.sin(tankAngle3));
+    const tankEnemyPos4 = new THREE.Vector3(centerX + innerRadius * Math.cos(tankAngle4), 0, centerZ + innerRadius * Math.sin(tankAngle4));
+    
+    createEnemy(tankEnemyPos1, 'tankEnemy');
+    createEnemy(tankEnemyPos2, 'tankEnemy');
+    createEnemy(tankEnemyPos3, 'tankEnemy');
+    createEnemy(tankEnemyPos4, 'tankEnemy');
+}
+
+// For levels beyond 3, create a random mix of enemies that gets harder
+function spawnRandomBossFightWave(level) {
+    // If this is level 5, spawn the Giga Boss as the final boss
+    if (level === 5) {
+        spawnGigaBossFight();
+        return;
+    }
+    
+    const numMiniBosses = Math.min(5, Math.floor(level / 2) + 1);
+    const numAppleEaters = Math.min(6, Math.floor(level / 1.5));
+    const numTankEnemies = Math.min(8, level * 2);
+    const numRegularEnemies = Math.min(12, level * 3);
+    
+    // Spawn mini bosses in a circle
+    const centerX = 0;
+    const centerZ = 0;
+    const outerRadius = GRID_SIZE / 3;
+    
+    for (let i = 0; i < numMiniBosses; i++) {
+        const angle = (i / numMiniBosses) * 2 * Math.PI;
+        const pos = new THREE.Vector3(
+            centerX + outerRadius * Math.cos(angle),
+            0,
+            centerZ + outerRadius * Math.sin(angle)
+        );
+        createMiniBoss(pos);
+    }
+    
+    // Spawn other enemies in random positions
+    for (let i = 0; i < numAppleEaters; i++) {
+        createEnemy(null, 'appleEater');
+    }
+    
+    for (let i = 0; i < numTankEnemies; i++) {
+        createEnemy(null, 'tankEnemy');
+    }
+    
+    for (let i = 0; i < numRegularEnemies; i++) {
+        createEnemy(null, 'regular');
+    }
+}
+
+// Special fight with the Giga Boss
+function spawnGigaBossFight() {
+    // Clear all existing enemies first
+    clearExistingEnemies();
+    
+    // Spawn the Giga Boss in the center
+    createGigaBoss();
+    
+    // Spawn a few initial enemies around the Giga Boss
+    const centerX = 0;
+    const centerZ = 0;
+    const radius = GRID_SIZE / 4;
+    
+    // Spawn 4 tank enemies in a square formation around the Giga Boss
+    const tankEnemyPos1 = new THREE.Vector3(centerX + radius, 0, centerZ + radius);
+    const tankEnemyPos2 = new THREE.Vector3(centerX + radius, 0, centerZ - radius);
+    const tankEnemyPos3 = new THREE.Vector3(centerX - radius, 0, centerZ + radius);
+    const tankEnemyPos4 = new THREE.Vector3(centerX - radius, 0, centerZ - radius);
+    
+    createEnemy(tankEnemyPos1, 'tankEnemy');
+    createEnemy(tankEnemyPos2, 'tankEnemy');
+    createEnemy(tankEnemyPos3, 'tankEnemy');
+    createEnemy(tankEnemyPos4, 'tankEnemy');
+}
 
 
 function isPositionTooCloseToSnake(position) {
@@ -788,7 +1067,17 @@ function isPositionTooCloseToSnake(position) {
 }
 
 function updateEnemies() {
+    // Track the current time for Giga Boss enemy spawning
+    const currentTime = Date.now();
+    
     enemies.forEach(enemy => {
+        // Check if this is a Giga Boss and should spawn enemies
+        if (enemy.isGigaBoss && currentTime - enemy.lastEnemySpawnTime > GIGA_BOSS_SPAWN_INTERVAL) {
+            // Spawn a random enemy near the Giga Boss
+            spawnEnemyNearGigaBoss(enemy);
+            enemy.lastEnemySpawnTime = currentTime;
+        }
+        
         // Skip movement for tank enemies as they are stationary
         if (!enemy.isTankEnemy) {
             let targetPosition;
@@ -1040,6 +1329,40 @@ function updateEnemyHealthBar(enemy) {
     enemy.healthBar.position.x = enemy.position.x - offset;
 }
 
+// Function to spawn enemies near the Giga Boss
+function spawnEnemyNearGigaBoss(gigaBoss) {
+    // Determine a random position near the Giga Boss
+    const angle = Math.random() * Math.PI * 2; // Random angle
+    const distance = GIGA_BOSS_SIZE + 2 + Math.random() * 3; // Random distance from boss
+    
+    const spawnPosition = new THREE.Vector3(
+        gigaBoss.position.x + Math.cos(angle) * distance,
+        0,
+        gigaBoss.position.z + Math.sin(angle) * distance
+    );
+    
+    // Randomly choose enemy type with weighted probabilities
+    const randomValue = Math.random();
+    let enemyType;
+    
+    if (randomValue < 0.6) {
+        // 60% chance for regular enemy
+        enemyType = 'regular';
+    } else if (randomValue < 0.85) {
+        // 25% chance for tank enemy
+        enemyType = 'tankEnemy';
+    } else {
+        // 15% chance for apple eater
+        enemyType = 'appleEater';
+    }
+    
+    // Create the enemy at the spawn position
+    createEnemy(spawnPosition, enemyType);
+    
+    // Create a visual effect for the spawn
+    createFloatingText("Spawned!", '#ff0000', spawnPosition);
+}
+
 function removeEnemy(index) {
     const enemy = enemies[index];
     
@@ -1168,13 +1491,13 @@ function updateLevelProgress() {
         // Check if we've reached the threshold to spawn the boss
         if (!bossSpawned && levelScore >= levelThreshold) {
             bossSpawned = true;
-            // Spawn a mini boss for this level
-            createMiniBoss();
+            // Start boss fight for this level with customized enemy waves
+            startBossFight(currentLevel);
         }
     }
 }
 
-function createMiniBoss() {
+function createMiniBoss(customPosition = null) {
     // Create a mini boss enemy (this is a special case of createEnemy)
     const isMiniBoss = true;
     
@@ -1183,15 +1506,19 @@ function createMiniBoss() {
     const enemyMaterial = new THREE.MeshBasicMaterial({ color: COLORS.miniBoss });
     const enemyMesh = new THREE.Mesh(enemyGeometry, enemyMaterial);
     
-    // Place enemy at random position
+    // Place enemy at random position or use custom position if provided
     let position;
-    do {
-        position = new THREE.Vector3(
-            Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2,
-            0,
-            Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2
-        );
-    } while (isPositionOccupied(position) || isPositionTooCloseToSnake(position));
+    if (customPosition) {
+        position = customPosition.clone();
+    } else {
+        do {
+            position = new THREE.Vector3(
+                Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2,
+                0,
+                Math.floor(Math.random() * GRID_SIZE) - GRID_SIZE / 2
+            );
+        } while (isPositionOccupied(position) || isPositionTooCloseToSnake(position));
+    }
     
     enemyMesh.position.copy(position);
     scene.add(enemyMesh);
@@ -1228,6 +1555,103 @@ function createMiniBoss() {
             Math.random() * 2 - 1
         ).normalize()
     });
+    
+    return position; // Return position for wave spawning purposes
+}
+
+function createGigaBoss(customPosition = null) {
+    // Create a giga boss enemy (the final boss)
+    const isGigaBoss = true;
+    
+    // Create enemy mesh (a larger, more complex shape for the Giga Boss)
+    // Use a combination of geometries to create a more intimidating boss
+    const bodyGeometry = new THREE.BoxGeometry(GIGA_BOSS_SIZE, GIGA_BOSS_SIZE, GIGA_BOSS_SIZE);
+    const bodyMaterial = new THREE.MeshBasicMaterial({ color: COLORS.gigaBoss });
+    const bodyMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
+    
+    // Add spikes to the Giga Boss (small cones on each face)
+    const spikeSize = GIGA_BOSS_SIZE / 4;
+    const spikeGeometry = new THREE.ConeGeometry(spikeSize / 2, spikeSize, 8);
+    const spikeMaterial = new THREE.MeshBasicMaterial({ color: 0x770000 }); // Darker red for spikes
+    
+    // Create spikes in different directions
+    const spikePositions = [
+        new THREE.Vector3(GIGA_BOSS_SIZE/2 + spikeSize/2, 0, 0), // right
+        new THREE.Vector3(-GIGA_BOSS_SIZE/2 - spikeSize/2, 0, 0), // left
+        new THREE.Vector3(0, 0, GIGA_BOSS_SIZE/2 + spikeSize/2), // front
+        new THREE.Vector3(0, 0, -GIGA_BOSS_SIZE/2 - spikeSize/2), // back
+        new THREE.Vector3(0, GIGA_BOSS_SIZE/2 + spikeSize/2, 0), // top
+    ];
+    
+    const spikeRotations = [
+        new THREE.Euler(0, 0, Math.PI/2), // right
+        new THREE.Euler(0, 0, -Math.PI/2), // left
+        new THREE.Euler(Math.PI/2, 0, 0), // front
+        new THREE.Euler(-Math.PI/2, 0, 0), // back
+        new THREE.Euler(0, 0, 0), // top
+    ];
+    
+    // Create and position spikes
+    const spikes = [];
+    for (let i = 0; i < spikePositions.length; i++) {
+        const spike = new THREE.Mesh(spikeGeometry, spikeMaterial);
+        spike.position.copy(spikePositions[i]);
+        spike.setRotationFromEuler(spikeRotations[i]);
+        bodyMesh.add(spike);
+        spikes.push(spike);
+    }
+    
+    // Place boss at center or custom position
+    let position;
+    if (customPosition) {
+        position = customPosition.clone();
+    } else {
+        // Default to center of the grid
+        position = new THREE.Vector3(0, 0, 0);
+    }
+    
+    bodyMesh.position.copy(position);
+    scene.add(bodyMesh);
+    
+    // Create health bar background (wider for the Giga Boss)
+    const healthBarBackgroundGeometry = new THREE.BoxGeometry(GIGA_BOSS_SIZE * 1.5, 0.4, 0.4);
+    const healthBarBackgroundMaterial = new THREE.MeshBasicMaterial({ color: COLORS.healthBarBackground });
+    const healthBarBackground = new THREE.Mesh(healthBarBackgroundGeometry, healthBarBackgroundMaterial);
+    healthBarBackground.position.set(position.x, GIGA_BOSS_SIZE + 1, position.z);
+    scene.add(healthBarBackground);
+    
+    // Create health bar
+    const healthBarGeometry = new THREE.BoxGeometry(GIGA_BOSS_SIZE * 1.5, 0.4, 0.4);
+    const healthBarMaterial = new THREE.MeshBasicMaterial({ color: COLORS.healthBar });
+    const healthBar = new THREE.Mesh(healthBarGeometry, healthBarMaterial);
+    healthBar.position.set(position.x, GIGA_BOSS_SIZE + 1, position.z);
+    scene.add(healthBar);
+    
+    // Calculate health (much higher than mini bosses)
+    const health = GIGA_BOSS_HEALTH;
+    
+    // Add enemy to array with special properties
+    enemies.push({
+        mesh: bodyMesh,
+        position: position,
+        health: health,
+        maxHealth: health,
+        healthBarBackground: healthBarBackground,
+        healthBar: healthBar,
+        isMiniBoss: false, // Not a mini boss
+        isGigaBoss: true, // Special flag for Giga Boss
+        lastEnemySpawnTime: Date.now(), // Track when the boss last spawned an enemy
+        direction: new THREE.Vector3(
+            Math.random() * 2 - 1,
+            0,
+            Math.random() * 2 - 1
+        ).normalize()
+    });
+    
+    // Create floating text to announce the boss
+    createFloatingText("GIGA BOSS APPEARS!", '#ff0000', new THREE.Vector3(0, GIGA_BOSS_SIZE * 2, 0));
+    
+    return position;
 }
 
 // Mobile controls setup function
