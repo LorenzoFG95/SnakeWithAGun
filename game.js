@@ -20,6 +20,7 @@ const COLORS = {
     miniBoss: 0x800080, // Purple color for mini boss
     appleEater: 0xff8800, // Orange color for apple-eating enemy
     appleEaterBoss: 0xff00ff, // Magenta color for transformed apple-eater boss
+    tankEnemy: 0x663300, // Brown color for tank enemy
     healthBar: 0xff0000,
     healthBarBackground: 0x555555,
     powerUpFireRate: 0xff9900,
@@ -78,11 +79,16 @@ const MINI_BOSS_HEALTH = ENEMY_HEALTH * 6;
 const MINI_BOSS_SPEED = ENEMY_SPEED * 0.5;
 
 // Apple eater constants
-const APPLE_EATER_CHANCE = 0.1; // 30% chance to spawn an apple-eating enemy
+const APPLE_EATER_CHANCE = 0.1; // 10% chance to spawn an apple-eating enemy
 const APPLE_EATER_SIZE = ENEMY_SIZE * 0.8; // Apple eaters are slightly smaller
 const APPLE_EATER_SPEED = ENEMY_SPEED * 1.2; // Apple eaters are slightly faster
 const APPLE_EATER_BOSS_SIZE = MINI_BOSS_SIZE * 0.8; // Transformed boss is smaller than mini boss
 const APPLE_EATER_BOSS_HEALTH = MINI_BOSS_HEALTH * 0.7; // Transformed boss has less health than mini boss
+
+// Tank enemy constants
+const TANK_ENEMY_CHANCE = 0.08; // 8% chance to spawn a tank enemy
+const TANK_ENEMY_SIZE = ENEMY_SIZE * 1.5; // Tank enemies are larger
+const TANK_ENEMY_HEALTH = ENEMY_HEALTH * 5; // Tank enemies have 5x health
 
 
 // DOM elements
@@ -683,21 +689,33 @@ function createEnemy() {
     // Mini bosses are spawned through createMiniBoss function
     const isMiniBoss = false;
     
-    // Determine if this will be an apple-eating enemy
-    // Only allow apple eaters after tutorial is completed
+    // Determine enemy type based on random chance
+    // Only allow special enemies after tutorial is completed
     const isAppleEater = tutorialCompleted && Math.random() < APPLE_EATER_CHANCE;
+    const isTankEnemy = tutorialCompleted && !isAppleEater && Math.random() < TANK_ENEMY_CHANCE;
     
     // Set enemy properties based on current level and type
-    const size = isAppleEater ? APPLE_EATER_SIZE : ENEMY_SIZE;
-    const health = ENEMY_HEALTH * (currentLevel + 1); // Increase health with level
-    const color = isAppleEater ? COLORS.appleEater : COLORS.enemy;
+    let size, health, color, enemyGeometry;
     
-    // Create enemy mesh (cube for regular enemies, sphere for apple eaters)
-    let enemyGeometry;
-    if (isAppleEater) {
+    if (isTankEnemy) {
+        // Tank enemy properties
+        size = TANK_ENEMY_SIZE;
+        health = TANK_ENEMY_HEALTH * (currentLevel + 1); // Increase health with level
+        color = COLORS.tankEnemy;
+        // Use a cube with different dimensions for tank enemies to make them look more like a tank
+        enemyGeometry = new THREE.BoxGeometry(size, size * 0.8, size * 1.2);
+    } else if (isAppleEater) {
+        // Apple eater properties
+        size = APPLE_EATER_SIZE;
+        health = ENEMY_HEALTH * (currentLevel + 1);
+        color = COLORS.appleEater;
         // Use sphere geometry for apple eaters to distinguish them
         enemyGeometry = new THREE.SphereGeometry(size, 16, 16);
     } else {
+        // Regular enemy properties
+        size = ENEMY_SIZE;
+        health = ENEMY_HEALTH * (currentLevel + 1);
+        color = COLORS.enemy;
         enemyGeometry = new THREE.BoxGeometry(size, size, size);
     }
     
@@ -717,15 +735,16 @@ function createEnemy() {
     enemyMesh.position.copy(position);
     scene.add(enemyMesh);
     
-    // Create health bar background
-    const healthBarBackgroundGeometry = new THREE.BoxGeometry(size, 0.2, 0.2);
+    // Create health bar background - make it wider for tank enemies to show their higher health
+    const healthBarWidth = isTankEnemy ? size * 1.5 : size;
+    const healthBarBackgroundGeometry = new THREE.BoxGeometry(healthBarWidth, 0.2, 0.2);
     const healthBarBackgroundMaterial = new THREE.MeshBasicMaterial({ color: COLORS.healthBarBackground });
     const healthBarBackground = new THREE.Mesh(healthBarBackgroundGeometry, healthBarBackgroundMaterial);
     healthBarBackground.position.set(position.x, size, position.z);
     scene.add(healthBarBackground);
     
     // Create health bar
-    const healthBarGeometry = new THREE.BoxGeometry(size, 0.2, 0.2);
+    const healthBarGeometry = new THREE.BoxGeometry(healthBarWidth, 0.2, 0.2);
     const healthBarMaterial = new THREE.MeshBasicMaterial({ color: COLORS.healthBar });
     const healthBar = new THREE.Mesh(healthBarGeometry, healthBarMaterial);
     healthBar.position.set(position.x, size, position.z);
@@ -741,6 +760,7 @@ function createEnemy() {
         healthBar: healthBar,
         isMiniBoss: isMiniBoss,
         isAppleEater: isAppleEater,
+        isTankEnemy: isTankEnemy, // New property to identify tank enemies
         hasEatenApple: false, // Track if this apple eater has eaten an apple
         direction: new THREE.Vector3(
             Math.random() * 2 - 1,
@@ -769,51 +789,55 @@ function isPositionTooCloseToSnake(position) {
 
 function updateEnemies() {
     enemies.forEach(enemy => {
-        let targetPosition;
-        
-        // Determine target based on enemy type
-        if (enemy.isAppleEater && !enemy.hasEatenApple) {
-            // Apple eaters target the apple
-            targetPosition = apple.position;
-        } else {
-            // Regular enemies and transformed apple eaters target the snake head
-            targetPosition = snake[0].position;
-        }
-        
-        // Move enemy towards target
-        const direction = new THREE.Vector3().subVectors(
-            targetPosition,
-            enemy.position
-        ).normalize();
-        
-        // Determine speed based on enemy type
-        let speed;
-        if (enemy.isMiniBoss) {
-            speed = MINI_BOSS_SPEED;
-        } else if (enemy.isAppleEater && !enemy.hasEatenApple) {
-            speed = APPLE_EATER_SPEED;
-        } else {
-            speed = ENEMY_SPEED;
-        }
-        
-        enemy.position.add(direction.multiplyScalar(speed));
-        enemy.mesh.position.copy(enemy.position);
-        
-        // Check if apple eater has reached the apple
-        if (enemy.isAppleEater && !enemy.hasEatenApple) {
-            const distanceToApple = enemy.position.distanceTo(apple.position);
-            if (distanceToApple < CELL_SIZE / 2 + APPLE_EATER_SIZE / 2) {
-                // Apple eater has reached the apple
-                transformAppleEater(enemy);
-                // Create a new apple
-                createApple();
+        // Skip movement for tank enemies as they are stationary
+        if (!enemy.isTankEnemy) {
+            let targetPosition;
+            
+            // Determine target based on enemy type
+            if (enemy.isAppleEater && !enemy.hasEatenApple) {
+                // Apple eaters target the apple
+                targetPosition = apple.position;
+            } else {
+                // Regular enemies and transformed apple eaters target the snake head
+                targetPosition = snake[0].position;
+            }
+            
+            // Move enemy towards target
+            const direction = new THREE.Vector3().subVectors(
+                targetPosition,
+                enemy.position
+            ).normalize();
+            
+            // Determine speed based on enemy type
+            let speed;
+            if (enemy.isMiniBoss) {
+                speed = MINI_BOSS_SPEED;
+            } else if (enemy.isAppleEater && !enemy.hasEatenApple) {
+                speed = APPLE_EATER_SPEED;
+            } else {
+                speed = ENEMY_SPEED;
+            }
+            
+            enemy.position.add(direction.multiplyScalar(speed));
+            enemy.mesh.position.copy(enemy.position);
+            
+            // Check if apple eater has reached the apple
+            if (enemy.isAppleEater && !enemy.hasEatenApple) {
+                const distanceToApple = enemy.position.distanceTo(apple.position);
+                if (distanceToApple < CELL_SIZE / 2 + APPLE_EATER_SIZE / 2) {
+                    // Apple eater has reached the apple
+                    transformAppleEater(enemy);
+                    // Create a new apple
+                    createApple();
+                }
             }
         }
         
         // Update health bar position - adjust height based on enemy size
         const barHeight = enemy.isMiniBoss ? MINI_BOSS_SIZE : 
                          (enemy.isAppleEater && enemy.hasEatenApple) ? APPLE_EATER_BOSS_SIZE : 
-                         enemy.isAppleEater ? APPLE_EATER_SIZE : ENEMY_SIZE;
+                         enemy.isAppleEater ? APPLE_EATER_SIZE : 
+                         enemy.isTankEnemy ? TANK_ENEMY_SIZE : ENEMY_SIZE;
         
         enemy.healthBarBackground.position.set(
             enemy.position.x,
